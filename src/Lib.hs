@@ -25,24 +25,13 @@ data TidalParseError = TidalParseError
 someFunc :: String
 someFunc = "Hello CIS 5520"
 
--- | parses a line into a TPat and synth name
-lineParser :: String -> (TPat a, String)
+-- | Parses a line into a TPat and synth name
+lineParser :: String -> Maybe (TPat a, String)
 lineParser = undefined
 
--- -- Verifies that given string is acceptable for our subset of Tidal
--- -- Uses parseBP to parse the string if it is acceptable, otherwise returns
--- -- an error
+-- | INTERNAL LILYPOND REPRESENTATION
 
--- goodStr :: String -> Either String String
-
--- Note to self on functions to include:
--- validity testing
--- converter from string (or whatever immediate repr Tidal lib has) to LVoice, given target key signature
--- function that runs above on all key signatures and outputs best fit key signature
-
--- Internal representation for Lilypond format
-
--- each voice will be scored on its own staff
+-- Note, each voice will be scored on its own staff
 type LMeasure = [LVoice]
 
 data LVoice
@@ -76,37 +65,81 @@ data LLetter
 makeLFile :: LMeasure -> IO ()
 makeLFile = undefined
 
--- | The subset of Tidal that we will be able to parse
+-- | TIDAL REPRESENTATION
+-- The subset of Tidal that we will be able to parse
 data TPat a where
-  TPat_Atom :: Maybe ((Int, Int), (Int, Int)) -> a -> TPat a
-  TPat_Fast :: TPat Time -> TPat a -> TPat a
-  TPat_Slow :: TPat Time -> TPat a -> TPat a
-  TPat_CycleChoose :: Int -> [TPat a] -> TPat a
-  TPat_Stack :: [TPat a] -> TPat a
+  TPatAtom :: Maybe ((Int, Int), (Int, Int)) -> a -> TPat a
+  TPatFast :: TPat Time -> TPat a -> TPat a
+  TPatSlow :: TPat Time -> TPat a -> TPat a
+  TPatCycleChoose :: Int -> [TPat a] -> TPat a
+  TPatStack :: [TPat a] -> TPat a
   --   TPat_Polyrhythm :: Maybe (TPat Rational) -> [TPat a] -> TPat a
-  TPat_Seq :: [TPat a] -> TPat a
-  TPat_Silence :: TPat a
-  TPat_Repeat :: Int -> TPat a -> TPat a
-  TPat_EnumFromTo :: TPat a -> TPat a -> TPat a
-  TPat_Var :: String -> TPat a
+  TPatSeq :: [TPat a] -> TPat a
+  TPatSilence :: TPat a
+  TPatRepeat :: Int -> TPat a -> TPat a
+  TPatEnumFromTo :: TPat a -> TPat a -> TPat a
+  --   TPat_Chord ::
+  --     (Num b, Enum b, Parseable b, Enumerable b) =>
+  --     (b -> a) ->
+  --     TPat b ->
+  --     TPat String ->
+  --     [TPat [Modifier]] ->
+  --     TPat a
+  TPatVar :: String -> TPat a
 
---   TPat_Chord ::
---     (Num b, Enum b, Parseable b, Enumerable b) =>
---     (b -> a) ->
---     TPat b ->
---     TPat String ->
---     [TPat [Modifier]] ->
---     TPat a
+-- | TRANSLATION FUNCTIONS
 
--- TESTING
+-- | Takes a TPat and converts it into a Lilypond voice
+translateTPat :: TPat a -> LVoice
+translateTPat tpat = case tpat of
+  -- TODO: handle time signatures, key signatures, mathematical details, etc.
+  TPatAtom Nothing a -> Perc (4, 4) (translateAtom a)
+  TPatAtom (Just (num, denom)) a -> Melody num Cn [Rest 1]
+  TPatFast tpat' a -> translateTPat tpat'
+  TPatSlow tpat' a -> translateTPat tpat'
+  TPatCycleChoose n tpat' -> Perc (4, 4) (translateCycleChoose n tpat')
+  TPatStack tpat' -> Perc (4, 4) (translateStack tpat')
+  TPatSeq tpat' -> Perc (4, 4) (translateSeq tpat')
+  TPatSilence -> Perc (4, 4) translateSilence
+  TPatRepeat n tpat' -> Perc (4, 4) (translateRepeat n tpat')
+  TPatEnumFromTo tpat' tpat'' -> Perc (4, 4) (translateEnumFromTo tpat' tpat'')
+  TPatVar s -> Perc (4, 4) (translateVar s)
 
+translateAtom :: a -> [String]
+translateAtom = undefined
+
+translateCycleChoose :: Int -> [TPat a] -> [String]
+translateCycleChoose = undefined
+
+translateStack :: [TPat a] -> [String]
+translateStack = undefined
+
+translateSeq :: [TPat a] -> [String]
+translateSeq = undefined
+
+translateSilence :: [String]
+translateSilence = undefined
+
+translateRepeat :: Int -> TPat a -> [String]
+translateRepeat = undefined
+
+translateEnumFromTo :: TPat a -> TPat a -> [String]
+translateEnumFromTo = undefined
+
+translateVar :: String -> [String]
+translateVar = undefined
+
+-- We will use a helper to convert a ControlPattern (Event ValueMap) into
+-- time-value pairs
+
+-- | TESTING
 testCheckValid :: Test
 testCheckValid =
   TestList
-    [ "Invalid 1" ~: lineParser "d1 $ s \"bass:5*8\" # lpf (range 100 1000 $ sine)" ~?= Nothing,
-      "Invalid 2" ~: lineParser "d1 $ n (slow 2 $ fmap (*7) $ run 8) # s \"supergong\" # decay \"[1 0.2]/4\" # voice \"[0.5 0]/8\"" ~?= Nothing,
-      "Valid 1" ~: isNothing $ lineParser "d1 $ n \"[[bd sd] bd bd]\"" ~?= False,
-      "Valid 2" ~: isNothing $ lineParser "d2 $ n \"<[e e f g] [g f e _]>\" # sound \"superpiano\"" ~?= False
+    [ "Invalid 1" ~: isNothing (lineParser "d1 $ s \"bass:5*8\" # lpf (range 100 1000 $ sine)") ~?= True,
+      "Invalid 2" ~: isNothing (lineParser "d1 $ n (slow 2 $ fmap (*7) $ run 8) # s \"supergong\" # decay \"[1 0.2]/4\" # voice \"[0.5 0]/8\"") ~?= True,
+      "Valid 1" ~: isNothing (lineParser "d1 $ n \"[[bd sd] bd bd]\"") ~?= False,
+      "Valid 2" ~: isNothing (lineParser "d2 $ n \"<[e e f g] [g f e _]>\" # sound \"superpiano\"") ~?= False
     ]
 
 instance Arbitrary TPat a where
@@ -124,7 +157,10 @@ voiceToLine = undefined
 
 prop_miniRoundTrip :: LVoice -> Bool
 prop_miniRoundTrip voice =
-  not isNothing (voiceToLine voice) ==> lineParser . voiceToLine voice == voice
+  let convertible = isJust (voiceToLine voice)
+   in not convertible && (lineParser (fromJust (voiceToLine voice)) == voice)
+
+-- not $ isNothing (voiceToLine voice) ==> (lineParser . voiceToLine voice == voice)
 
 -- Not an immediate goal, but we might use some advanced I/O to
 -- test that converting a Tidal expression to MIDI via the Tidal application
