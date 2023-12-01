@@ -31,6 +31,15 @@ common common-stanza
     , directory
     , random
     , mtl
+    , microspec
+    , parsec
+    , tidal >= 1.8 && <1.10
+    , transformers >= 0.5 && < 0.7
+    , template-haskell
+    , haskellish >= 0.3.2 && < 0.4
+    , containers < 0.7
+    , mtl >= 2.2.2 && <2.3
+    , text < 2.1
   default-language:
     GHC2021
   default-extensions:
@@ -41,6 +50,9 @@ library
       common-stanza
   exposed-modules:
       Lib
+      Parse.TH 
+      Parse
+      TidalParseTest
       -- if you add modules to your project, list them here
       -- so that they will be available to the executable and test suite
   hs-source-dirs:
@@ -68,6 +80,12 @@ test-suite project-cis5520-test
   hs-source-dirs:
       test
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  other-modules:
+      TidalParseTest
   build-depends:
       project-cis5520
+      , microspec
+      , containers 
+      , tidal 
+      
 
