@@ -40,6 +40,8 @@ common common-stanza
     , containers < 0.7
     , mtl >= 2.2.2 && <2.3
     , text < 2.1
+    , lilypond
+    , prettify
   default-language:
     GHC2021
   default-extensions:
@@ -49,7 +51,8 @@ library
   import:
       common-stanza
   exposed-modules:
-      Lib
+    --   Lib
+      TidalToLily
       Parse.TH 
       Parse
       TidalParseTest

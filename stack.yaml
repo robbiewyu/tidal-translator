@@ -1,6 +1,13 @@
 resolver: lts-21.6
 allow-newer: true
+extra-deps:
+- "haskellish-0.3.2.1"
+- "lilypond-1.9.0"
+- "music-dynamics-literal-1.9.0"
+- "music-pitch-literal-1.9.0"
+- "prettify-1.0"
 packages:
 - .
+
 
 

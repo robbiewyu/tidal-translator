@@ -13,10 +13,26 @@ import Data.Char
 import Data.List (dropWhileEnd)
 import Data.Text qualified
 import Language.Haskellish as Haskellish
+  ( Haskellish,
+    Span,
+    asRightSection,
+    integer,
+    list,
+    parseAndRun,
+    rational,
+    removeComments,
+    required,
+    reserved,
+    span,
+    string,
+    tuple,
+    (<*!>),
+    (<?>),
+  )
+import Parse.TH
 import Sound.Tidal.Chords qualified as T
 import Sound.Tidal.Context (ControlPattern, Enumerable, Pattern, Time, ValueMap)
 import Sound.Tidal.Context qualified as T
-import Parse.TH
 
 type H = Haskellish ()
 
