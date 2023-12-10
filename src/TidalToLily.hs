@@ -19,6 +19,7 @@ import GHC.Real (denominator, numerator)
 import Text.Pretty
 import Data.Music.Lilypond as L
 import Data.Ratio
+import Data.Map (Map, lookup)
 
 {-
   Current naive implementation of retrieving the time signature 
@@ -37,6 +38,8 @@ getTimeSig subdivisions =
 -}
 getKeySig :: [Event a] -> Music
 getKeySig eventLs = Key (Pitch (C, 0, 5)) Major
+
+type KeyInternal = Int
 
 
 getNotes :: [Event a] -> [Music]
@@ -57,6 +60,29 @@ getNotes eventLs =
                 [L.Note (NotePitch (Pitch (C, 0, 5)) Nothing) (Just (Duration duration')) []]
       ) eventLs
     _ -> error "Time signature not found"
+
+
+-- rule for getting accidental
+-- If letter was sharped/flatted in key signature, do natural
+-- If letter wasn't sharped/flatted, then 
+-- to figure out if accidental applies, can let list be of notes in major scale
+getPitch :: KeyInternal -> Int -> Pitch -- 
+getPitch x y = undefined 
+
+getNote :: ValueMap -> L.Pitch
+getNote vm = let noteVal = Data.Map.lookup "n" vm in 
+  case noteVal of
+    Just val -> case val of 
+      VN note -> 
+        let pcs = ["c", "cs", "d", "ds", "e", "f", "fs", "g", "gs", "a", "as", "b"]
+            pitchClass = pcs !! mod noteInt 12
+            octave = show $ div note 12 + 5
+            noteInt = round note -- round . unNote?
+            in
+              Pitch (pitchClass, 0, octave)
+      _ -> error "Note value not found"
+    _ -> error "Note value not found"
+
 
 {-
   Create a slur of notes of power 2 that add up to duration. Similar
@@ -114,6 +140,9 @@ controlPatternConverter inputTidalStr =
         if withinSubset tidalPat then tidalPat 
         else error "Tidal pattern not within subset"
 
+
+-- Create a Composition from multiple rounds of Tidal input/ControlPatterns
+type Composition = [Music] 
 
 tidalToLilypond :: ControlPattern -> Music
 tidalToLilypond tidalPat =
