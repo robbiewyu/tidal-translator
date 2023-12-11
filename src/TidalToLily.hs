@@ -1,6 +1,7 @@
 module TidalToLily where
 
 import Control.Applicative ()
+import Control.Monad
 import Data.Map (Map, lookup)
 import Data.Maybe
 import Data.Music.Lilypond as L
@@ -35,29 +36,61 @@ getTimeSig subdivisions =
   Current naive implementation of retrieving the key signature
   from the ControlPattern's subdivisions.
 -}
-getKeySig :: [Event a] -> Music
-getKeySig eventLs = Key (Pitch (C, 0, 5)) Major
+getKeySig :: [Event a] -> Pitch
+getKeySig eventLs = Pitch (C, 0, 5)
 
-getNotes :: [Event a] -> [Music]
+getNotes :: [Event ValueMap] -> [Music]
 getNotes eventLs =
-  case getTimeSig $ map (\(Event _ _ arc _) -> arc) eventLs of
-    Time num den ->
-      concatMap
-        (eventToMusic num den)
-        eventLs
-    _ -> error "Time signature not found"
+  let pitchMap = getPitchMap $ getKeySig eventLs
+   in case getTimeSig $ map (\(Event _ _ arc _) -> arc) eventLs of
+        Time num den ->
+          concatMap
+            (eventToMusic pitchMap num den)
+            eventLs
+        _ -> error "Time signature not found"
 
-eventToMusic :: Integer -> Integer -> Event a -> [Music]
-eventToMusic num den (Event ctx whole part val) =
+data Unit
+  = URest
+  | UNote Pitch
+  | UChord [Pitch]
+
+eventToMusic :: [Pitch] -> Integer -> Integer -> Event ValueMap -> [Music]
+eventToMusic pitchMap num den (Event ctx whole part vm) =
   let (Arc start finish) = part
       duration = finish - start
       duration' = (numerator duration * num) % (denominator duration * den)
-   in if isStrange duration'
-        then
-          let firstNote = beginSlur $ head $ multiNote duration'
-              lastNote = endSlur $ last $ multiNote duration'
-           in [firstNote] ++ tail (init $ multiNote duration') ++ [lastNote]
-        else [L.Note (NotePitch (Pitch (C, 0, 5)) Nothing) (Just (Duration duration')) []]
+      multi = multiNote duration'
+   in case parseValueMap pitchMap vm of
+        Just URest -> undefined
+        Just (UNote p) -> applySlurs $ map (\dur -> L.Note (NotePitch p Nothing) (Just dur) []) multi
+        Just (UChord ps) -> undefined
+        Nothing -> error "ValueMap parsing failed"
+
+applySlurs :: [Music] -> [Music]
+applySlurs xs@(a : b : r) = [beginSlur $ head xs] ++ tail (init xs) ++ [endSlur $ last xs]
+applySlurs xs = xs
+
+-- returns correct lilypond unit with arbitrary duration
+parseValueMap :: [Pitch] -> ValueMap -> Maybe Unit
+parseValueMap pitchMap vm = msum triedList
+  where
+    triedList = [UNote <$> getNote pitchMap vm]
+
+-- undefined -- try each parsing until something succeeds
+
+-- takes num, den, and event. Outputs a sequence of notes, all of an arbitrary pitch
+
+-- if isStrange duration'
+--     then
+--       let firstNote = beginSlur $ head $ multiNote duration'
+--           lastNote = endSlur $ last $ multiNote duration'
+--        in [firstNote] ++ tail (init $ multiNote duration') ++ [lastNote]
+--     else [L.Note (NotePitch (Pitch (C, 0, 5)) Nothing) (Just (Duration duration')) []]
+
+-- changes the pitch of a note
+alterPitch :: Music -> Pitch -> Music
+alterPitch note@(L.Note (NotePitch p a) b c) p' = L.Note (NotePitch p' a) b c
+alterPitch note p' = note
 
 -- apply something at the end to modify pitches
 
@@ -178,18 +211,18 @@ getNote pitchMap vm = do
   use the List monad to generate both slurs and tuplets options as a
   list of possible Music. Then, use a heuristic to choose the best option.
 -}
-multiNote :: Rational -> [Music]
+multiNote :: Rational -> [Duration]
 multiNote duration =
   let duration' = numerator duration % denominator duration
    in if duration' == 0
         then []
         else
           if duration' == 1
-            then [L.Note (NotePitch (Pitch (C, 0, 5)) Nothing) (Just (Duration duration)) []]
+            then [Duration duration]
             else
               let power = floor $ logBase 2 (fromRational duration')
                   dur :: Rational = if power < 0 then 1 % (2 ^ (-1 * power)) else 2 ^ power
-                  note = L.Note (NotePitch (Pitch (C, 0, 5)) Nothing) (Just (Duration dur)) []
+                  note = Duration dur
                in note : multiNote (duration - dur)
 
 {-
