@@ -38,38 +38,45 @@ getTimeSig subdivisions =
 getKeySig :: [Event a] -> Music
 getKeySig eventLs = Key (Pitch (C, 0, 5)) Major
 
-type KeyInternal = Int
-
 getNotes :: [Event a] -> [Music]
 getNotes eventLs =
   case getTimeSig $ map (\(Event _ _ arc _) -> arc) eventLs of
     Time num den ->
       concatMap
-        ( \(Event ctx whole part val) ->
-            let (Arc start finish) = part
-                duration = finish - start
-                duration' = (numerator duration * num) % (denominator duration * den)
-             in if isStrange duration'
-                  then
-                    let firstNote = beginSlur $ head $ multiNote duration'
-                        lastNote = endSlur $ last $ multiNote duration'
-                     in [firstNote] ++ tail (init $ multiNote duration') ++ [lastNote]
-                  else [L.Note (NotePitch (Pitch (C, 0, 5)) Nothing) (Just (Duration duration')) []]
-        )
+        (eventToMusic num den)
         eventLs
     _ -> error "Time signature not found"
+
+eventToMusic :: Integer -> Integer -> Event a -> [Music]
+eventToMusic num den (Event ctx whole part val) =
+  let (Arc start finish) = part
+      duration = finish - start
+      duration' = (numerator duration * num) % (denominator duration * den)
+   in if isStrange duration'
+        then
+          let firstNote = beginSlur $ head $ multiNote duration'
+              lastNote = endSlur $ last $ multiNote duration'
+           in [firstNote] ++ tail (init $ multiNote duration') ++ [lastNote]
+        else [L.Note (NotePitch (Pitch (C, 0, 5)) Nothing) (Just (Duration duration')) []]
+
+-- apply something at the end to modify pitches
 
 -- half-steps for a major scale, with 0 as the base
 majorScale :: [Int]
 majorScale = [0, 2, 4, 5, 7, 9, 11]
+
+invMajorScale :: [Int]
+invMajorScale = [0, -1, 1, -1, 2, 3, -1, 4, -1, 5, -1, 6]
+
+scaleNeighbors :: [[Int]]
+scaleNeighbors = [[0], [0, 1], [1], [1, 2], [2], [3], [3, 4], [4], [4, 5], [5], [5, 6], [6]]
 
 -- pitch class to preferred accidental (sharp = 1, flat = -1)
 pcToAccidental :: [Int]
 pcToAccidental = [1, 1, 1, -1, 1, 1, 1]
 
 -- get major scale, with accidentals notated canonically
--- based on preferred accidental,
--- ascend in keyclass, adjusting based on preferred acc
+-- octaves of all notes (pre-accidentals) are the same
 getMajorScale :: Pitch -> [Pitch]
 getMajorScale p =
   let (keyClass, accidental, oct) = L.getPitch p
@@ -82,29 +89,46 @@ getMajorScale p =
       diff = zipWith (\a b -> b - a) initScale newScale
    in if abs accidental > 1
         then error "too many sharps or flats"
-        else zipWith (\a b -> Pitch (a, (b + 12) `mod` 12, 0)) letters diff
+        else zipWith (\a b -> Pitch (a, conciseMod $ (b + 12) `mod` 12, 0)) letters diff
+  where
+    conciseMod x = if x <= 6 then x else x - 12
 
 getModValue :: Pitch -> Int
 getModValue (Pitch (a, b, _)) = (majorScale !! fromEnum a) + b
+
+-- expresses x with the same letter as p, using p's octave
+modifyPitch :: Pitch -> Int -> Pitch
+modifyPitch p@(Pitch (a, b, c)) x = Pitch (a, b + x - getModValue p, c)
+
+getBestNeighbor :: [Pitch] -> Int -> Int -> Pitch
+getBestNeighbor scale pref i = case scaleNeighbors !! i of
+  [a] -> scale !! a
+  -- add thing that handles naturals
+  [a, b] -> case invMajorScale !! noteInt of
+    -1 -> modifyPitch (if pref >= 0 then scale !! a else scale !! b) noteInt
+    x -> Pitch (toEnum x, 0, 0)
+    where
+      noteInt = (i + getModValue (head scale)) `mod` 12
+  _ -> error "invalid scaleNeighbors"
 
 -- given major scale key, returns a length 12 list from note mod values to pitches
 -- start from relative, then do rotation
 -- imperatively, start with [x, _, x, _ x, x, _, x, _, x, _, x]
 getPitchMap :: Pitch -> [Pitch]
-getPitchMap p = map (intToPitch p) [0 .. 11]
-
--- first check if natural (c major). then check if in the major scale
--- finally, find closest based on pref
-intToPitch :: Pitch -> Int -> Pitch
-intToPitch p i = if i `elem` majorScale then undefined else undefined
+getPitchMap p =
+  let scale = getMajorScale p
+      (keyClass, accidental, oct) = L.getPitch p
+      pref = if accidental /= 0 then accidental else pcToAccidental !! fromEnum keyClass
+      cDiff = (negate (getModValue p) `mod` 12 + 12) `mod` 12
+   in map (getBestNeighbor scale pref . (\a -> (a + cDiff) `mod` 12)) [0 .. 11] -- change 0 to 11 to modular
 
 -- if in scale, then output the same. Otherwise, find something that naturals or follow accidental direction
 getPitch2 :: [Pitch] -> Int -> Pitch
 getPitch2 pitchMap y =
   let absPitch = ((y `mod` 12) + 12) `mod` 12
       octave = (y - absPitch) `div` 12 + 5
-      (a, b, c) = L.getPitch $ pitchMap !! absPitch
-   in Pitch (a, b, c + octave)
+      (a, b, _) = L.getPitch $ pitchMap !! absPitch
+   in Pitch (a, b, octave)
 
 -- map (\a -> majorScale !! (a + pcNum) % 8) [0 .. 7]
 
