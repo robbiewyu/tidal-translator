@@ -42,6 +42,7 @@ common common-stanza
     , text < 2.1
     , lilypond
     , prettify
+    , vector
   default-language:
     GHC2021
   default-extensions:

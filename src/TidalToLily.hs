@@ -2,10 +2,11 @@ module TidalToLily where
 
 import Control.Applicative ()
 import Control.Monad
-import Data.Map (Map, lookup)
+import Data.Map (Map, empty, lookup)
 import Data.Maybe
 import Data.Music.Lilypond as L
 import Data.Ratio
+import Data.Vector qualified as V
 import GHC.Generics
 import GHC.Real (denominator, numerator)
 import Parse
@@ -20,6 +21,8 @@ import Test.QuickCheck
   )
 import Text.Parsec (ParseError)
 import Text.Pretty
+
+-- import qualified Control.Arrow as them
 
 {-
   Current naive implementation of retrieving the time signature
@@ -54,14 +57,14 @@ data Unit
   | UNote Pitch
   | UChord [Pitch]
 
-eventToMusic :: [Pitch] -> Integer -> Integer -> Event ValueMap -> [Music]
+eventToMusic :: V.Vector Pitch -> Integer -> Integer -> Event ValueMap -> [Music]
 eventToMusic pitchMap num den (Event ctx whole part vm) =
   let (Arc start finish) = part
       duration = finish - start
       duration' = (numerator duration * num) % (denominator duration * den)
       multi = multiNote duration'
    in case parseValueMap pitchMap vm of
-        Just URest -> undefined
+        Just URest -> map (\dur -> L.Rest (Just dur) []) multi
         Just (UNote p) -> applySlurs $ map (\dur -> L.Note (NotePitch p Nothing) (Just dur) []) multi
         Just (UChord ps) -> undefined
         Nothing -> error "ValueMap parsing failed"
@@ -71,141 +74,99 @@ applySlurs xs@(a : b : r) = [beginSlur $ head xs] ++ tail (init xs) ++ [endSlur 
 applySlurs xs = xs
 
 -- returns correct lilypond unit with arbitrary duration
-parseValueMap :: [Pitch] -> ValueMap -> Maybe Unit
+parseValueMap :: V.Vector Pitch -> ValueMap -> Maybe Unit
 parseValueMap pitchMap vm = msum triedList
   where
-    triedList = [UNote <$> getNote pitchMap vm]
-
--- undefined -- try each parsing until something succeeds
-
--- takes num, den, and event. Outputs a sequence of notes, all of an arbitrary pitch
-
--- if isStrange duration'
---     then
---       let firstNote = beginSlur $ head $ multiNote duration'
---           lastNote = endSlur $ last $ multiNote duration'
---        in [firstNote] ++ tail (init $ multiNote duration') ++ [lastNote]
---     else [L.Note (NotePitch (Pitch (C, 0, 5)) Nothing) (Just (Duration duration')) []]
-
--- changes the pitch of a note
-alterPitch :: Music -> Pitch -> Music
-alterPitch note@(L.Note (NotePitch p a) b c) p' = L.Note (NotePitch p' a) b c
-alterPitch note p' = note
+    triedList = [UNote <$> getNote pitchMap vm, getRest vm]
 
 -- apply something at the end to modify pitches
 
 -- half-steps for a major scale, with 0 as the base
-majorScale :: [Int]
-majorScale = [0, 2, 4, 5, 7, 9, 11]
 
-invMajorScale :: [Int]
-invMajorScale = [0, -1, 1, -1, 2, 3, -1, 4, -1, 5, -1, 6]
+majorScale :: V.Vector Int
+majorScale = V.fromList [0, 2, 4, 5, 7, 9, 11]
 
-scaleNeighbors :: [[Int]]
-scaleNeighbors = [[0], [0, 1], [1], [1, 2], [2], [3], [3, 4], [4], [4, 5], [5], [5, 6], [6]]
+invMajorScale :: V.Vector Int
+invMajorScale = V.fromList [0, -1, 1, -1, 2, 3, -1, 4, -1, 5, -1, 6]
+
+scaleNeighbors :: V.Vector (Int, Int)
+scaleNeighbors = V.fromList [(0, 0), (0, 1), (1, 1), (1, 2), (2, 2), (3, 3), (3, 4), (4, 4), (4, 5), (5, 5), (5, 6), (6, 6)]
 
 -- pitch class to preferred accidental (sharp = 1, flat = -1)
-pcToAccidental :: [Int]
-pcToAccidental = [1, 1, 1, -1, 1, 1, 1]
+pcToAccidental :: V.Vector Int
+pcToAccidental = V.fromList [1, 1, 1, -1, 1, 1, 1]
 
 -- get major scale, with accidentals notated canonically
 -- octaves of all notes (pre-accidentals) are the same
-getMajorScale :: Pitch -> [Pitch]
+getMajorScale :: Pitch -> V.Vector Pitch
 getMajorScale p =
-  let (keyClass, accidental, oct) = L.getPitch p
-      pcNum = fromEnum keyClass
-      x = getModValue p
-      prefAccidental = if accidental /= 0 then accidental else pcToAccidental !! pcNum
-      newScale = map (\a -> (a + x) `mod` 12) majorScale
-      letters = map (\a -> toEnum $ (a + pcNum) `mod` 7) [0 .. 6]
-      initScale = map (\a -> majorScale !! ((a + pcNum) `mod` 7)) [0 .. 6] -- based only on staff line
-      diff = zipWith (\a b -> b - a) initScale newScale
-   in if abs accidental > 1
-        then error "too many sharps or flats"
-        else zipWith (\a b -> Pitch (a, conciseMod $ (b + 12) `mod` 12, 0)) letters diff
+  V.fromList $
+    let (keyClass, accidental, oct) = L.getPitch p
+        pcNum = fromEnum keyClass
+        x = getModValue p
+        prefAccidental = if accidental /= 0 then accidental else pcToAccidental V.! pcNum
+        newScale = map (\a -> (a + x) `mod` 12) (V.toList majorScale)
+        letters = map (\a -> toEnum $ (a + pcNum) `mod` 7) [0 .. 6]
+        initScale = map (\a -> majorScale V.! ((a + pcNum) `mod` 7)) [0 .. 6] -- based only on staff line
+        diff = zipWith (\a b -> b - a) initScale newScale
+     in if abs accidental > 1
+          then error "too many sharps or flats"
+          else zipWith (\a b -> Pitch (a, conciseMod $ (b + 12) `mod` 12, 0)) letters diff
   where
     conciseMod x = if x <= 6 then x else x - 12
 
 getModValue :: Pitch -> Int
-getModValue (Pitch (a, b, _)) = (majorScale !! fromEnum a) + b
+getModValue (Pitch (a, b, _)) = (majorScale V.! fromEnum a) + b
 
 -- expresses x with the same letter as p, using p's octave
 modifyPitch :: Pitch -> Int -> Pitch
 modifyPitch p@(Pitch (a, b, c)) x = Pitch (a, b + x - getModValue p, c)
 
-getBestNeighbor :: [Pitch] -> Int -> Int -> Pitch
-getBestNeighbor scale pref i = case scaleNeighbors !! i of
-  [a] -> scale !! a
-  -- add thing that handles naturals
-  [a, b] -> case invMajorScale !! noteInt of
-    -1 -> modifyPitch (if pref >= 0 then scale !! a else scale !! b) noteInt
-    x -> Pitch (toEnum x, 0, 0)
-    where
-      noteInt = (i + getModValue (head scale)) `mod` 12
-  _ -> error "invalid scaleNeighbors"
+getBestNeighbor :: V.Vector Pitch -> Int -> Int -> Pitch
+getBestNeighbor scale pref i =
+  let (a, b) = scaleNeighbors V.! i
+   in if a == b
+        then scale V.! a
+        else case invMajorScale V.! noteInt of
+          -1 -> modifyPitch (if pref >= 0 then scale V.! a else scale V.! b) noteInt
+          x -> Pitch (toEnum x, 0, 0)
+  where
+    noteInt = (i + getModValue (V.head scale)) `mod` 12
 
 -- given major scale key, returns a length 12 list from note mod values to pitches
 -- start from relative, then do rotation
 -- imperatively, start with [x, _, x, _ x, x, _, x, _, x, _, x]
-getPitchMap :: Pitch -> [Pitch]
+getPitchMap :: Pitch -> V.Vector Pitch
 getPitchMap p =
-  let scale = getMajorScale p
-      (keyClass, accidental, oct) = L.getPitch p
-      pref = if accidental /= 0 then accidental else pcToAccidental !! fromEnum keyClass
-      cDiff = (negate (getModValue p) `mod` 12 + 12) `mod` 12
-   in map (getBestNeighbor scale pref . (\a -> (a + cDiff) `mod` 12)) [0 .. 11] -- change 0 to 11 to modular
+  V.fromList $
+    let scale = getMajorScale p
+        (keyClass, accidental, oct) = L.getPitch p
+        pref = if accidental /= 0 then accidental else pcToAccidental V.! fromEnum keyClass
+        cDiff = (negate (getModValue p) `mod` 12 + 12) `mod` 12
+     in map (getBestNeighbor scale pref . (\a -> (a + cDiff) `mod` 12)) [0 .. 11] -- change 0 to 11 to modular
 
 -- if in scale, then output the same. Otherwise, find something that naturals or follow accidental direction
-getPitch2 :: [Pitch] -> Int -> Pitch
+getPitch2 :: V.Vector Pitch -> Int -> Pitch
 getPitch2 pitchMap y =
   let absPitch = ((y `mod` 12) + 12) `mod` 12
       octave = (y - absPitch) `div` 12 + 5
-      (a, b, _) = L.getPitch $ pitchMap !! absPitch
+      (a, b, _) = L.getPitch $ pitchMap V.! absPitch
    in Pitch (a, b, octave)
 
--- map (\a -> majorScale !! (a + pcNum) % 8) [0 .. 7]
-
--- rule for getting accidental
--- if occurs on major scale, then do whatever that note is
--- otherwise, find nearest guy brought up or down
--- getPitch :: Pitch -> Int -> Pitch -- key, note int
--- getPitch p y =
---   let (keyClass, accidental, oct) = L.getPitch p
---       pcNum = fromEnum keyClass
---       pitch = y `mod` 12
---       octave = y `div` 12 + 5
---       prefAccidental = if accidental != 0 then accidental else pcToAccidental !! pcNum
---    in if (abs accidental) > 1
---         then error "too many sharps or flats"
---         else undefined
-
--- let (keyClass, accidental, oct) = L.getPitch p
---     enumKey = fromEnum keyClass
---     x = (majorScale !! enumKey) + accidental
---     pitch = y `mod` 12
---     octave = y `div` 12 + 5
---     scale = zipWith (\i a -> (enumKey + i `mod` 8, (x + a) `mod` 12)) [0 .. 7] majorScale
---  in undefined
-
-getNote :: [Pitch] -> ValueMap -> Maybe L.Pitch
+getNote :: V.Vector Pitch -> ValueMap -> Maybe L.Pitch
 getNote pitchMap vm = do
-  val <- Data.Map.lookup "n" vm
+  val <- msum [Data.Map.lookup "n" vm, Data.Map.lookup "note" vm]
   return
     ( case val of
         VN note -> getPitch2 pitchMap $ round note
         _ -> error "Note value note found"
     )
 
--- case Data.Map.lookup "n" vm of
---   Just val -> case val of
---     VN note -> Just $ getPitch note where
---       getPitch
---     _ -> error "Note value not found"
---   Nothing -> Nothing
+getRest :: ValueMap -> Maybe Unit
+getRest vm = if null vm then Just URest else Nothing
 
 {-
-  Create a slur of notes of power 2 that add up to duration. Similar
-  to the DP coin change problem.
+  Create a slur of notes of power 2 that add up to duration.
   TODO:
   An alternative to creating slurs is to create tuplets. For the future
   use the List monad to generate both slurs and tuplets options as a
@@ -228,13 +189,20 @@ multiNote duration =
 {-
   A duration is strange if it is not a power of 2 (negative exponents allowed).
 -}
-isStrange :: Rational -> Bool
-isStrange duration =
-  let n = numerator duration
-      d = denominator duration
-   in if n == 1
-        then (d /= 1) && (odd d || isStrange (n % (d `div` 2)))
-        else odd n || isStrange ((n `div` 2) % d)
+
+insertRests :: [Event ValueMap] -> [Event ValueMap]
+insertRests es = foldr f [] (Event {context = Pattern.Context [], whole = Nothing, part = Arc 0 0, value = Data.Map.empty} : es)
+  where
+    f x ys =
+      let Arc _ t1 = part x
+          Arc t2 _ = if null ys then Arc 1 1 else part $ head ys
+       in if t1 == t2
+            then x : ys
+            else x : (Event {context = Pattern.Context [], whole = Nothing, part = Arc t1 t2, value = Data.Map.empty}) : ys
+
+-- TODO: somehow find a way to partition into notes and chords
+-- given durations, chunk them
+-- can look at start and end time events and chunk from there
 
 getClef :: [Event a] -> Music
 getClef eventLs = Clef Treble
@@ -258,9 +226,13 @@ type Composition = [Music]
 
 tidalToLilypond :: ControlPattern -> Music
 tidalToLilypond tidalPat =
-  let eventLs = queryArc tidalPat (Arc 0 1)
+  let eventLs = tail $ insertRests $ queryArc tidalPat (Arc 0 1)
       subdivisions = map part eventLs
    in let timeSig = getTimeSig subdivisions
           clef = getClef eventLs
           notes = getNotes eventLs
        in Sequential [clef, timeSig, Sequential notes]
+
+-- chord interpretation
+-- random patterns - use random seed
+-- use vector instead of list for scale stuff
