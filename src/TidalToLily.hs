@@ -64,7 +64,9 @@ collectPitches = mapM (\e -> msum (toNoteInt . flip Data.Map.lookup (value e) <$
     toNoteInt _ = Nothing
 
 countNumInScale :: Int -> [Int] -> Int
-countNumInScale shift = length . filter (\x -> Data.Set.member (((x - shift) `mod` 12 + 12) `mod` 12) majorScaleSet)
+countNumInScale shift notes = cnt majorScaleSet notes + max (2 * cnt majorDomSet notes) (2 * cnt minorDomSet notes)
+  where
+    cnt set = length . filter (\x -> Data.Set.member ((x - shift) `mod` 12) set)
 
 getBestFitPitch :: [Int] -> Pitch
 getBestFitPitch notes = keySigs V.! snd (foldr compUpd (-1, -1) [0 .. 11])
@@ -108,7 +110,7 @@ applyTies xs = xs
 parseValueMap :: Maybe (V.Vector Pitch) -> [ValueMap] -> Maybe Unit
 parseValueMap mPitchMap vms = msum triedList
   where
-    triedList = [getRest vms, UChord <$> (mPitchMap >>= (\mpm -> mapM (getNote mpm) vms))]
+    triedList = [getRest vms, UChord <$> (mPitchMap >>= (\mpm -> mapM (getNote mpm) vms)), UChord <$> mapM getDrumNote vms]
 
 -- apply something at the end to modify pitches
 
@@ -120,6 +122,12 @@ majorScale = V.fromList [0, 2, 4, 5, 7, 9, 11]
 majorScaleSet :: Set Int
 majorScaleSet = fromList [0, 2, 4, 5, 7, 9, 11]
 
+majorDomSet :: Set Int
+majorDomSet = fromList [0, 4, 7]
+
+minorDomSet :: Set Int
+minorDomSet = fromList [9, 0, 4]
+
 keySigs :: V.Vector Pitch
 keySigs = V.fromList $ Pitch <$> [(C, 0, 0), (D, -1, 0), (D, 0, 0), (E, -1, 0), (E, 0, 0), (F, 0, 0), (G, -1, 0), (G, 0, 0), (A, -1, 0), (A, 0, 0), (B, -1, 0), (B, 0, 0)]
 
@@ -128,8 +136,6 @@ invMajorScale = V.fromList [0, -1, 1, -1, 2, 3, -1, 4, -1, 5, -1, 6]
 
 scaleNeighbors :: V.Vector (Int, Int)
 scaleNeighbors = V.fromList [(0, 0), (0, 1), (1, 1), (1, 2), (2, 2), (3, 3), (3, 4), (4, 4), (4, 5), (5, 5), (5, 6), (6, 6)]
-
--- d1 $ n "[c, e, g] _ _ ~"
 
 -- pitch class to preferred accidental (sharp = 1, flat = -1)
 pcToAccidental :: V.Vector Int
@@ -142,7 +148,7 @@ getMajorScale p =
   V.fromList $
     let (keyClass, accidental, oct) = L.getPitch p
         pcNum = fromEnum keyClass
-        x = getModValue p
+        x = getRelValue p
         prefAccidental = if accidental /= 0 then accidental else pcToAccidental V.! pcNum
         newScale = map (\a -> (a + x) `mod` 12) (V.toList majorScale)
         letters = map (\a -> toEnum $ (a + pcNum) `mod` 7) [0 .. 6]
@@ -150,16 +156,19 @@ getMajorScale p =
         diff = zipWith (flip (-)) initScale newScale
      in if abs accidental > 1
           then error "too many sharps or flats"
-          else zipWith (\a b -> Pitch (a, conciseMod $ (b + 12) `mod` 12, 0)) letters diff
+          else zipWith (\a b -> handleWeirdOctave $ Pitch (a, conciseMod $ b `mod` 12, 0)) letters diff
   where
     conciseMod x = if x <= 6 then x else x - 12
+    handleWeirdOctave op@(Pitch (x, y, z)) =
+      let rv = getRelValue op
+       in Pitch (x, y, if rv >= 12 then -1 else if rv < 0 then 1 else 0)
 
-getModValue :: Pitch -> Int
-getModValue (Pitch (a, b, _)) = (majorScale V.! fromEnum a) + b
+getRelValue :: Pitch -> Int
+getRelValue (Pitch (a, b, c)) = (majorScale V.! fromEnum a) + b + 12 * c
 
 -- expresses x with the same letter as p, using p's octave
 modifyPitch :: Pitch -> Int -> Pitch
-modifyPitch p@(Pitch (a, b, c)) x = Pitch (a, b + x - getModValue p, c)
+modifyPitch p@(Pitch (a, b, c)) x = Pitch (a, b + x - getRelValue p, c)
 
 getBestNeighbor :: V.Vector Pitch -> Int -> Int -> Pitch
 getBestNeighbor scale pref i =
@@ -170,7 +179,7 @@ getBestNeighbor scale pref i =
           -1 -> modifyPitch (if pref >= 0 then scale V.! a else scale V.! b) noteInt
           x -> Pitch (toEnum x, 0, 0)
   where
-    noteInt = (i + getModValue (V.head scale)) `mod` 12
+    noteInt = (i + getRelValue (V.head scale)) `mod` 12
 
 -- given major scale key, returns a length 12 list from note mod values to pitches
 -- start from relative, then do rotation
@@ -181,13 +190,13 @@ getPitchMap p =
     let scale = getMajorScale p
         (keyClass, accidental, oct) = L.getPitch p
         pref = if accidental /= 0 then accidental else pcToAccidental V.! fromEnum keyClass
-        cDiff = (negate (getModValue p) `mod` 12 + 12) `mod` 12
+        cDiff = (negate (getRelValue p) `mod` 12) `mod` 12
      in map (getBestNeighbor scale pref . (\a -> (a + cDiff) `mod` 12)) [0 .. 11] -- change 0 to 11 to modular
 
 -- if in scale, then output the same. Otherwise, find something that naturals or follow accidental direction
 getPitch2 :: V.Vector Pitch -> Int -> Pitch
 getPitch2 pitchMap y =
-  let absPitch = ((y `mod` 12) + 12) `mod` 12
+  let absPitch = y `mod` 12
       octave = (y - absPitch) `div` 12 + 5
       (a, b, _) = L.getPitch $ pitchMap V.! absPitch
    in Pitch (a, b, octave)
@@ -201,15 +210,14 @@ getNote pitchMap vm = do
         _ -> error "Note value note found"
     )
 
+getDrumNote :: ValueMap -> Maybe L.Pitch
+getDrumNote = undefined
+
 getRest :: [ValueMap] -> Maybe Unit
 getRest vms = if null vms then Just URest else Nothing
 
 {-
-  Create a slur of notes of power 2 that add up to duration.
-  TODO:
-  An alternative to creating slurs is to create tuplets. For the future
-  use the List monad to generate both slurs and tuplets options as a
-  list of possible Music. Then, use a heuristic to choose the best option.
+  Create a tie of notes of power 2 that add up to duration.
 -}
 multiNote :: Rational -> [Duration]
 multiNote duration =
@@ -299,3 +307,6 @@ tidalToLilypond tidalPat =
 -- key signature inference
 -- chord inference
 -- drums
+
+-- make key signature inference smarter by weighing notes in dominant chords more
+-- resolved bug in octaves for accidental notes
