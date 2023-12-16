@@ -5,11 +5,22 @@ import Control.Monad
 import Data.Map (Map, empty, insert, lookup, member, toAscList)
 import Data.Maybe
 import Data.Music.Lilypond as L
+  ( Clef (Treble),
+    Duration (Duration),
+    Mode (Major),
+    Music (Chord, Clef, Key, Rest, Sequential, Time),
+    Note (NotePitch),
+    Pitch (..),
+    PitchName (..),
+    beginTie,
+  )
 import Data.Ratio
+import Data.Set (Set, fromList, member)
 import Data.Vector qualified as V
 import GHC.Generics
 import GHC.Real (denominator, numerator)
 import Parse
+import Sound.Tidal.Context (n)
 import Sound.Tidal.Pattern as Pattern
 import Test.HUnit
 import Test.QuickCheck
@@ -39,30 +50,50 @@ getTimeSig subdivisions =
   Current naive implementation of retrieving the key signature
   from the ControlPattern's subdivisions.
 -}
-getKeySig :: [Event a] -> Pitch
-getKeySig eventLs = Pitch (C, 0, 5)
 
-getNotes :: [Event [ValueMap]] -> [Music]
-getNotes eventLs =
-  let pitchMap = getPitchMap $ getKeySig eventLs
-   in case getTimeSig $ map (\(Event _ _ arc _) -> arc) eventLs of
-        Time num den ->
-          concatMap
-            (eventToMusic pitchMap num den)
-            eventLs
-        _ -> error "Time signature not found"
+-- first make sure everything has the n feature. then, make a count of
+getKeySig :: [Event ValueMap] -> Maybe Pitch
+getKeySig eventLs = do
+  ps <- collectPitches eventLs
+  return $ getBestFitPitch ps
+
+collectPitches :: [Event ValueMap] -> Maybe [Int]
+collectPitches = mapM (\e -> msum (toNoteInt . flip Data.Map.lookup (value e) <$> ["n", "note"]))
+  where
+    toNoteInt (Just (VN n)) = Just $ round n
+    toNoteInt _ = Nothing
+
+countNumInScale :: Int -> [Int] -> Int
+countNumInScale shift = length . filter (\x -> Data.Set.member (((x - shift) `mod` 12 + 12) `mod` 12) majorScaleSet)
+
+getBestFitPitch :: [Int] -> Pitch
+getBestFitPitch notes = keySigs V.! snd (foldr compUpd (-1, -1) [0 .. 11])
+  where
+    compUpd s tup =
+      let res = countNumInScale s notes
+       in max (res, s) tup
+
+-- after collecting pitches, iterate through all major scales and see which one hits most notes
+
+getNotes :: Maybe (V.Vector Pitch) -> [Event [ValueMap]] -> [Music]
+getNotes mPitchMap eventLs = case getTimeSig $ map (\(Event _ _ arc _) -> arc) eventLs of
+  Time num den ->
+    concatMap
+      (eventToMusic mPitchMap num den)
+      eventLs
+  _ -> error "Time signature not found"
 
 data Unit
   = URest
   | UChord [Pitch]
 
-eventToMusic :: V.Vector Pitch -> Integer -> Integer -> Event [ValueMap] -> [Music]
-eventToMusic pitchMap num den (Event ctx whole part vms) =
+eventToMusic :: Maybe (V.Vector Pitch) -> Integer -> Integer -> Event [ValueMap] -> [Music]
+eventToMusic mPitchMap num den (Event ctx whole part vms) =
   let (Arc start finish) = part
       duration = finish - start
       duration' = (numerator duration * num) % (denominator duration * den)
       multi = multiNote duration'
-   in case parseValueMap pitchMap vms of
+   in case parseValueMap mPitchMap vms of
         Just URest -> map (\dur -> L.Rest (Just dur) []) multi
         -- Just (UNote p) -> applyTies $ map (\dur -> L.Note (NotePitch p Nothing) (Just dur) []) multi
         -- Just (UChord ps) -> applyTies $ map (\dur -> L.Chord [(NotePitch p Nothing, []), (NotePitch (Pitch (G, 0, 5)) Nothing, [])] (Just dur) []) multi
@@ -74,10 +105,10 @@ applyTies xs@(a : b : r) = (beginTie <$> init xs) ++ [last xs]
 applyTies xs = xs
 
 -- returns correct lilypond unit with arbitrary duration
-parseValueMap :: V.Vector Pitch -> [ValueMap] -> Maybe Unit
-parseValueMap pitchMap vms = msum triedList
+parseValueMap :: Maybe (V.Vector Pitch) -> [ValueMap] -> Maybe Unit
+parseValueMap mPitchMap vms = msum triedList
   where
-    triedList = [getRest vms, UChord <$> mapM (getNote pitchMap) vms]
+    triedList = [getRest vms, UChord <$> (mPitchMap >>= (\mpm -> mapM (getNote mpm) vms))]
 
 -- apply something at the end to modify pitches
 
@@ -85,6 +116,12 @@ parseValueMap pitchMap vms = msum triedList
 
 majorScale :: V.Vector Int
 majorScale = V.fromList [0, 2, 4, 5, 7, 9, 11]
+
+majorScaleSet :: Set Int
+majorScaleSet = fromList [0, 2, 4, 5, 7, 9, 11]
+
+keySigs :: V.Vector Pitch
+keySigs = V.fromList $ Pitch <$> [(C, 0, 0), (D, -1, 0), (D, 0, 0), (E, -1, 0), (E, 0, 0), (F, 0, 0), (G, -1, 0), (G, 0, 0), (A, -1, 0), (A, 0, 0), (B, -1, 0), (B, 0, 0)]
 
 invMajorScale :: V.Vector Int
 invMajorScale = V.fromList [0, -1, 1, -1, 2, 3, -1, 4, -1, 5, -1, 6]
@@ -244,13 +281,21 @@ type Composition = [Music]
 
 tidalToLilypond :: ControlPattern -> Music
 tidalToLilypond tidalPat =
-  let eventLs = tail $ insertRests $ (getFullRep . getChordRep) $ queryArc tidalPat (Arc 0 1)
+  let eventLs1 = queryArc tidalPat (Arc 0 1)
+      eventLs = tail $ insertRests $ (getFullRep . getChordRep) $ eventLs1
       subdivisions = map part eventLs
-   in let timeSig = getTimeSig subdivisions
-          clef = getClef eventLs
-          notes = getNotes eventLs
-       in Sequential [clef, timeSig, Sequential notes]
+      timeSig = getTimeSig subdivisions
+      key = getKeySig eventLs1
+      clef = getClef eventLs
+      notes = getNotes (key >>= (return . getPitchMap)) eventLs
+   in if isJust key
+        then Sequential [clef, Key (fromJust key) Major, timeSig, Sequential notes]
+        else error "need to implement: non-notes detected"
 
 -- chord interpretation
 -- random patterns - use random seed
 -- use vector instead of list for scale stuff
+
+-- key signature inference
+-- chord inference
+-- drums
