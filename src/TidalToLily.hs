@@ -108,7 +108,7 @@ getMajorScale p =
         newScale = map (\a -> (a + x) `mod` 12) (V.toList majorScale)
         letters = map (\a -> toEnum $ (a + pcNum) `mod` 7) [0 .. 6]
         initScale = map (\a -> majorScale V.! ((a + pcNum) `mod` 7)) [0 .. 6] -- based only on staff line
-        diff = zipWith (\a b -> b - a) initScale newScale
+        diff = zipWith (flip (-)) initScale newScale
      in if abs accidental > 1
           then error "too many sharps or flats"
           else zipWith (\a b -> Pitch (a, conciseMod $ (b + 12) `mod` 12, 0)) letters diff
