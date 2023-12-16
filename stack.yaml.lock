@@ -3,7 +3,42 @@
 # For more information, please see the documentation at:
 #   https://docs.haskellstack.org/en/stable/lock_files
 
-packages: []
+packages:
+- completed:
+    hackage: haskellish-0.3.2.1@sha256:d034cede4e369e97d46107210adfd0ebfffd4d0198fe3e107b7550d6c1b39674,1068
+    pantry-tree:
+      sha256: 8af25030ce6ea1c3e586fc43c373d54460551bc1c8b84d1dd50ef7068e1c0014
+      size: 238
+  original:
+    hackage: haskellish-0.3.2.1
+- completed:
+    hackage: lilypond-1.9.0@sha256:b4b51d77699e47ba3ced169cce76d3d5ebab937418de7feb7a2b921513f598d9,1477
+    pantry-tree:
+      sha256: 26a07e8467866fe3d6bb33f206dda294f184b1099542ce87b842f01bcec981e8
+      size: 512
+  original:
+    hackage: lilypond-1.9.0
+- completed:
+    hackage: music-dynamics-literal-1.9.0@sha256:2283b5cc4e67f3ef3561ff0da7f8b2fae87f407d7b620a8fcf3b75b6d0332fb1,1010
+    pantry-tree:
+      sha256: 906de68e15afe7cc37ce42701d1b86afab0690f29ae0d1a5e66f10dfde2a03b9
+      size: 237
+  original:
+    hackage: music-dynamics-literal-1.9.0
+- completed:
+    hackage: music-pitch-literal-1.9.0@sha256:ce94f1e65bdbfc0d6ae6fee4b983a5681ba33ec17d49d4f53def4dc91665066d,1203
+    pantry-tree:
+      sha256: 4737a5cfc68305ad06c8be528d030b8e91fb2294bb5d730b8854c5fa775d45a4
+      size: 520
+  original:
+    hackage: music-pitch-literal-1.9.0
+- completed:
+    hackage: prettify-1.0@sha256:7105b5783f3d899311f6e392cfe8a230eabc7db98b77e7557b7d1335d91a5bc0,775
+    pantry-tree:
+      sha256: 4a0ede45d208df1cc66f219b0b7e5e1de61f9620bc549fef1bce6b24a0107e19
+      size: 212
+  original:
+    hackage: prettify-1.0
 snapshots:
 - completed:
     sha256: 2e7d4a730d8eb5373b2d383fac84efcf7c81e3b7a5fce71b4c2e19a1768f25a6

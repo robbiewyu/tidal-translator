@@ -2,7 +2,7 @@ module TidalToLily where
 
 import Control.Applicative ()
 import Control.Monad
-import Data.Map (Map, empty, lookup)
+import Data.Map (Map, empty, insert, lookup, member, toAscList)
 import Data.Maybe
 import Data.Music.Lilypond as L
 import Data.Ratio
@@ -42,7 +42,7 @@ getTimeSig subdivisions =
 getKeySig :: [Event a] -> Pitch
 getKeySig eventLs = Pitch (C, 0, 5)
 
-getNotes :: [Event ValueMap] -> [Music]
+getNotes :: [Event [ValueMap]] -> [Music]
 getNotes eventLs =
   let pitchMap = getPitchMap $ getKeySig eventLs
    in case getTimeSig $ map (\(Event _ _ arc _) -> arc) eventLs of
@@ -54,30 +54,30 @@ getNotes eventLs =
 
 data Unit
   = URest
-  | UNote Pitch
   | UChord [Pitch]
 
-eventToMusic :: V.Vector Pitch -> Integer -> Integer -> Event ValueMap -> [Music]
-eventToMusic pitchMap num den (Event ctx whole part vm) =
+eventToMusic :: V.Vector Pitch -> Integer -> Integer -> Event [ValueMap] -> [Music]
+eventToMusic pitchMap num den (Event ctx whole part vms) =
   let (Arc start finish) = part
       duration = finish - start
       duration' = (numerator duration * num) % (denominator duration * den)
       multi = multiNote duration'
-   in case parseValueMap pitchMap vm of
+   in case parseValueMap pitchMap vms of
         Just URest -> map (\dur -> L.Rest (Just dur) []) multi
-        Just (UNote p) -> applySlurs $ map (\dur -> L.Note (NotePitch p Nothing) (Just dur) []) multi
-        Just (UChord ps) -> undefined
+        -- Just (UNote p) -> applyTies $ map (\dur -> L.Note (NotePitch p Nothing) (Just dur) []) multi
+        -- Just (UChord ps) -> applyTies $ map (\dur -> L.Chord [(NotePitch p Nothing, []), (NotePitch (Pitch (G, 0, 5)) Nothing, [])] (Just dur) []) multi
+        Just (UChord ps) -> applyTies $ map (\dur -> L.Chord (map (\p -> (NotePitch p Nothing, [])) ps) (Just dur) []) multi
         Nothing -> error "ValueMap parsing failed"
 
-applySlurs :: [Music] -> [Music]
-applySlurs xs@(a : b : r) = [beginSlur $ head xs] ++ tail (init xs) ++ [endSlur $ last xs]
-applySlurs xs = xs
+applyTies :: [Music] -> [Music]
+applyTies xs@(a : b : r) = (beginTie <$> init xs) ++ [last xs]
+applyTies xs = xs
 
 -- returns correct lilypond unit with arbitrary duration
-parseValueMap :: V.Vector Pitch -> ValueMap -> Maybe Unit
-parseValueMap pitchMap vm = msum triedList
+parseValueMap :: V.Vector Pitch -> [ValueMap] -> Maybe Unit
+parseValueMap pitchMap vms = msum triedList
   where
-    triedList = [UNote <$> getNote pitchMap vm, getRest vm]
+    triedList = [getRest vms, UChord <$> mapM (getNote pitchMap) vms]
 
 -- apply something at the end to modify pitches
 
@@ -91,6 +91,8 @@ invMajorScale = V.fromList [0, -1, 1, -1, 2, 3, -1, 4, -1, 5, -1, 6]
 
 scaleNeighbors :: V.Vector (Int, Int)
 scaleNeighbors = V.fromList [(0, 0), (0, 1), (1, 1), (1, 2), (2, 2), (3, 3), (3, 4), (4, 4), (4, 5), (5, 5), (5, 6), (6, 6)]
+
+-- d1 $ n "[c, e, g] _ _ ~"
 
 -- pitch class to preferred accidental (sharp = 1, flat = -1)
 pcToAccidental :: V.Vector Int
@@ -162,8 +164,8 @@ getNote pitchMap vm = do
         _ -> error "Note value note found"
     )
 
-getRest :: ValueMap -> Maybe Unit
-getRest vm = if null vm then Just URest else Nothing
+getRest :: [ValueMap] -> Maybe Unit
+getRest vms = if null vms then Just URest else Nothing
 
 {-
   Create a slur of notes of power 2 that add up to duration.
@@ -190,19 +192,35 @@ multiNote duration =
   A duration is strange if it is not a power of 2 (negative exponents allowed).
 -}
 
-insertRests :: [Event ValueMap] -> [Event ValueMap]
-insertRests es = foldr f [] (Event {context = Pattern.Context [], whole = Nothing, part = Arc 0 0, value = Data.Map.empty} : es)
+insertRests :: [Event [ValueMap]] -> [Event [ValueMap]]
+insertRests es = foldr f [] (Event {context = Pattern.Context [], whole = Nothing, part = Arc 0 0, value = []} : es)
   where
     f x ys =
       let Arc _ t1 = part x
           Arc t2 _ = if null ys then Arc 1 1 else part $ head ys
        in if t1 == t2
             then x : ys
-            else x : (Event {context = Pattern.Context [], whole = Nothing, part = Arc t1 t2, value = Data.Map.empty}) : ys
+            else x : (Event {context = Pattern.Context [], whole = Nothing, part = Arc t1 t2, value = []}) : ys
 
--- TODO: somehow find a way to partition into notes and chords
--- given durations, chunk them
--- can look at start and end time events and chunk from there
+-- should reject control sequences where two overlapping events don't overlap perfectly
+
+getChordRep :: [Event ValueMap] -> Maybe (Map Time (Time, [ValueMap]))
+getChordRep = foldr handleElem $ Just Data.Map.empty
+
+handleElem :: Event ValueMap -> Maybe (Map Time (Time, [ValueMap])) -> Maybe (Map Time (Time, [ValueMap]))
+handleElem _ Nothing = Nothing
+handleElem e (Just m) =
+  let (st, en, vm) = (start $ part e, stop $ part e, value e)
+      m' = if Data.Map.member st m then m else Data.Map.insert st (en, []) m
+   in do
+        x <- Data.Map.lookup st m'
+        if fst x == en
+          then return $ Data.Map.insert st (fst x, vm : snd x) m'
+          else Nothing
+
+getFullRep :: Maybe (Map Time (Time, [ValueMap])) -> [Event [ValueMap]]
+getFullRep (Just m) = (\(t0, (t1, vm)) -> Event {context = Pattern.Context [], whole = Nothing, part = Arc t0 t1, value = vm}) <$> Data.Map.toAscList m
+getFullRep Nothing = error "getFullRep: invalid overlapping"
 
 getClef :: [Event a] -> Music
 getClef eventLs = Clef Treble
@@ -226,7 +244,7 @@ type Composition = [Music]
 
 tidalToLilypond :: ControlPattern -> Music
 tidalToLilypond tidalPat =
-  let eventLs = tail $ insertRests $ queryArc tidalPat (Arc 0 1)
+  let eventLs = tail $ insertRests $ (getFullRep . getChordRep) $ queryArc tidalPat (Arc 0 1)
       subdivisions = map part eventLs
    in let timeSig = getTimeSig subdivisions
           clef = getClef eventLs
