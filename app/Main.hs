@@ -17,7 +17,7 @@ main = do
         Right (CP _ cp) -> cp
         Right _ -> error "Command unsupported"
       -- Convert the Tidal pattern to a Lilypond pattern
-      convertedLilypondAST = tidalToLilypond controlPattern
+      convertedLilypondAST = tidalToLilypond (controlPatternConverter controlPattern)
   -- Print the Lilypond pattern
   print $ pretty convertedLilypondAST
 

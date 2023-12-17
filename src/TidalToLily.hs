@@ -296,9 +296,6 @@ controlPatternConverter inputTidalStr =
             then tidalPat
             else error "Tidal pattern not within subset"
 
--- Create a Composition from multiple rounds of Tidal input/ControlPatterns
-type Composition = [Music]
-
 tidalToLilypond :: ControlPattern -> Music
 tidalToLilypond tidalPat =
   let eventLs1 = queryArc tidalPat (Arc 0 1)

@@ -33,16 +33,19 @@ data Option
   = Slurs
   | NoSlurs
   | TimeSignatureBase Integer
-  | CP Integer ControlPattern
+  | CP Integer String
+  | Silence Integer
   | Advance Integer
+  | PrintComp
+  | Quit
   deriving (Show, Eq)
 
 setOptionParser :: Parsec String () Option
 -- Uses applicatives to parse the command line options
 setOptionParser =
   Text.Parsec.lookAhead $ 
-    Slurs <$ Text.Parsec.string "slurs"
-    <|> NoSlurs <$ Text.Parsec.string "no-slurs"
+    -- Slurs <$ Text.Parsec.string "slurs"<|>
+     NoSlurs <$ Text.Parsec.string "no-slurs"
     <|> TimeSignatureBase <$> (Text.Parsec.string "time-signature-base" 
                 <* simpleWhitespace *> ParseConversionCmd.integer)
     <|> Advance <$> (Text.Parsec.string "advance" 
@@ -50,7 +53,13 @@ setOptionParser =
     <|> CP <$> (Text.Parsec.string "d" *> ParseConversionCmd.integer 
                 <* simpleWhitespace <* Text.Parsec.string "$")
                 <* simpleWhitespace
-                <*> (extractCP <$> Text.Parsec.many1 Text.Parsec.anyChar)
+                <*> Text.Parsec.many1 Text.Parsec.anyChar
+    <|> Silence <$> (Text.Parsec.string "silence" *> 
+                simpleWhitespace *> 
+                Text.Parsec.string "d" *>
+                ParseConversionCmd.integer)
+    <|> PrintComp <$ Text.Parsec.string "print-comp"
+    <|> Quit <$ Text.Parsec.string "quit"
 
 simpleWhitespace :: Parsec String () ()
 simpleWhitespace = void $ many1 (oneOf " \t\n")
