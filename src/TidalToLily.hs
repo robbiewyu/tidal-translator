@@ -1,24 +1,28 @@
+{-# LANGUAGE TupleSections #-}
+
 module TidalToLily where
 
 import Control.Applicative ()
 import Control.Monad
-import Data.Map (Map, empty, insert, lookup, member, toAscList)
+import Data.Char
+import Data.Map (Map, empty, fromList, insert, lookup, member, toAscList)
 import Data.Maybe
-import Data.Music.Lilypond as L
-  ( Clef (Treble),
-    Duration (Duration),
-    Mode (Major),
-    Music (Chord, Clef, Key, Rest, Sequential, Time),
-    Note (NotePitch),
-    Pitch (..),
-    PitchName (..),
-    beginTie,
-  )
 import Data.Ratio
 import Data.Set (Set, fromList, member)
 import Data.Vector qualified as V
 import GHC.Generics
 import GHC.Real (denominator, numerator)
+import LilypondPlus.LilypondPlus as L
+  ( Clef (Percussion, Treble),
+    DrumPitch (..),
+    Duration (Duration),
+    Mode (Major),
+    Music (Chord, Clef, Key, Rest, Sequential, Time),
+    Note (DrumNotePitch, NotePitch),
+    Pitch (..),
+    PitchClass (..),
+    beginTie,
+  )
 import Parse
 import Sound.Tidal.Context (n)
 import Sound.Tidal.Pattern as Pattern
@@ -87,7 +91,8 @@ getNotes mPitchMap eventLs = case getTimeSig $ map (\(Event _ _ arc _) -> arc) e
 
 data Unit
   = URest
-  | UChord [Pitch]
+  | UChord [L.Note]
+  deriving (Show)
 
 eventToMusic :: Maybe (V.Vector Pitch) -> Integer -> Integer -> Event [ValueMap] -> [Music]
 eventToMusic mPitchMap num den (Event ctx whole part vms) =
@@ -99,7 +104,8 @@ eventToMusic mPitchMap num den (Event ctx whole part vms) =
         Just URest -> map (\dur -> L.Rest (Just dur) []) multi
         -- Just (UNote p) -> applyTies $ map (\dur -> L.Note (NotePitch p Nothing) (Just dur) []) multi
         -- Just (UChord ps) -> applyTies $ map (\dur -> L.Chord [(NotePitch p Nothing, []), (NotePitch (Pitch (G, 0, 5)) Nothing, [])] (Just dur) []) multi
-        Just (UChord ps) -> applyTies $ map (\dur -> L.Chord (map (\p -> (NotePitch p Nothing, [])) ps) (Just dur) []) multi
+        Just (UChord ps) -> applyTies $ map (\dur -> L.Chord (map (,[]) ps) (Just dur) []) multi
+        -- Just (UDrumChord ps) -> applyTies $ map (\dur -> L.Chord (map (\p -> (DrumNotePitch p Nothing, [])) ps) (Just dur) []) multi
         Nothing -> error "ValueMap parsing failed"
 
 applyTies :: [Music] -> [Music]
@@ -110,7 +116,7 @@ applyTies xs = xs
 parseValueMap :: Maybe (V.Vector Pitch) -> [ValueMap] -> Maybe Unit
 parseValueMap mPitchMap vms = msum triedList
   where
-    triedList = [getRest vms, UChord <$> (mPitchMap >>= (\mpm -> mapM (getNote mpm) vms)), UChord <$> mapM getDrumNote vms]
+    triedList = [getRest vms, UChord <$> (mapM (getNote mPitchMap) vms)]
 
 -- apply something at the end to modify pitches
 
@@ -120,13 +126,13 @@ majorScale :: V.Vector Int
 majorScale = V.fromList [0, 2, 4, 5, 7, 9, 11]
 
 majorScaleSet :: Set Int
-majorScaleSet = fromList [0, 2, 4, 5, 7, 9, 11]
+majorScaleSet = Data.Set.fromList [0, 2, 4, 5, 7, 9, 11]
 
 majorDomSet :: Set Int
-majorDomSet = fromList [0, 4, 7]
+majorDomSet = Data.Set.fromList [0, 4, 7]
 
 minorDomSet :: Set Int
-minorDomSet = fromList [9, 0, 4]
+minorDomSet = Data.Set.fromList [9, 0, 4]
 
 keySigs :: V.Vector Pitch
 keySigs = V.fromList $ Pitch <$> [(C, 0, 0), (D, -1, 0), (D, 0, 0), (E, -1, 0), (E, 0, 0), (F, 0, 0), (G, -1, 0), (G, 0, 0), (A, -1, 0), (A, 0, 0), (B, -1, 0), (B, 0, 0)]
@@ -201,17 +207,23 @@ getPitch2 pitchMap y =
       (a, b, _) = L.getPitch $ pitchMap V.! absPitch
    in Pitch (a, b, octave)
 
-getNote :: V.Vector Pitch -> ValueMap -> Maybe L.Pitch
-getNote pitchMap vm = do
-  val <- msum [Data.Map.lookup "n" vm, Data.Map.lookup "note" vm]
+getNote :: Maybe (V.Vector Pitch) -> ValueMap -> Maybe L.Note
+getNote (Just pitchMap) vm = do
+  val <- msum (flip Data.Map.lookup vm <$> ["n", "note"])
   return
     ( case val of
-        VN note -> getPitch2 pitchMap $ round note
-        _ -> error "Note value note found"
+        VN note -> NotePitch (getPitch2 pitchMap $ round note) Nothing
+        _ -> error "Note value not found"
+    )
+getNote Nothing vm = do
+  val <- msum (flip Data.Map.lookup vm <$> ["s", "sound"])
+  ( case val of
+      VS str -> flip DrumNotePitch Nothing <$> Data.Map.lookup str drumPitches
+      _ -> error "Drum note value not found"
     )
 
-getDrumNote :: ValueMap -> Maybe L.Pitch
-getDrumNote = undefined
+drumPitches :: Data.Map.Map String L.DrumPitch
+drumPitches = Data.Map.fromList (map (\i -> (toLower <$> show (toEnum i :: L.DrumPitch), toEnum i)) [0 .. 18])
 
 getRest :: [ValueMap] -> Maybe Unit
 getRest vms = if null vms then Just URest else Nothing
@@ -298,7 +310,7 @@ tidalToLilypond tidalPat =
       notes = getNotes (key >>= (return . getPitchMap)) eventLs
    in if isJust key
         then Sequential [clef, Key (fromJust key) Major, timeSig, Sequential notes]
-        else error "need to implement: non-notes detected"
+        else Sequential [Clef Percussion, timeSig, Sequential notes]
 
 -- chord interpretation
 -- random patterns - use random seed

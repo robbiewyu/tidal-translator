@@ -43,6 +43,9 @@ common common-stanza
     , lilypond
     , prettify
     , vector
+    , vector-space
+    , data-default
+    , music-pitch-literal
   default-language:
     GHC2021
   default-extensions:
@@ -56,6 +59,8 @@ library
       TidalToLily
       Parse.TH 
       Parse
+      LilypondPlus.LilypondPlus
+      LilypondPlus.Pitch
       ParseConversionCmd
       TidalParseTest
       -- if you add modules to your project, list them here
