@@ -1,16 +1,57 @@
 module TidalToLilyCheck where
 
+import Control.Monad (liftM2)
 import Data.Music.Lilypond as L
+import Data.Ratio
 import Sound.Tidal.ParseBP (TPat (..))
+import Sound.Tidal.Time (Time (..))
 import Test.HUnit
-import Test.QuickCheck as QC (Arbitrary (..), Gen, quickCheck, sample', shrinkNothing, suchThat, withMaxSuccess)
+import Test.QuickCheck as QC (Arbitrary (..), Gen, oneof, quickCheck, sample', shrinkNothing, sized, suchThat, withMaxSuccess)
 import TidalToLily
 
-instance Arbitrary (TPat Rational) where
-  arbitrary = TPat_Atom Nothing <$> positiveRational
+instance Arbitrary Time where
+  arbitrary = liftM2 (%) QC.arbitrary eight
     where
-      positiveRational = QC.arbitrary `suchThat` (> 0)
+      eight = return 8
   shrink = QC.shrinkNothing
+
+instance Arbitrary (TPat Rational) where
+  arbitrary :: Gen (TPat Rational)
+  arbitrary =
+    QC.oneof
+      [ TPat_Atom <$> noteGen <*> timeGen,
+        TPat_Stack <$> QC.arbitrary,
+        TPat_Polyrhythm <$> QC.arbitrary <*> QC.arbitrary,
+        TPat_Repeat <$> QC.arbitrary <*> QC.arbitrary
+        -- TPat_Silence <$ QC.arbitrary
+        -- TPat_Fast <$> QC.arbitrary,
+        -- TPat_Slow
+        --   <$> QC.arbitrary,
+        -- TPat_Seq
+        --   <$> QC.arbitrary
+        --   <*> QC.arbitrary
+      ]
+    where
+      -- generate rationals with denominator 8
+      timeGen :: Gen Rational = liftM2 (%) (QC.arbitrary `suchThat` (> 0)) (return 8)
+      -- generate Maybe ((Int, Int), (Int, Int)) where ints are positive
+      noteGen = do
+        num1 :: Int <- QC.arbitrary `suchThat` (> 0)
+        den1 :: Int <- QC.arbitrary `suchThat` (> 0)
+        num2 :: Int <- QC.arbitrary `suchThat` (> 0)
+        den2 :: Int <- QC.arbitrary `suchThat` (> 0)
+        return (Just ((num1, den1), (num2, den2)))
+  shrink tpat = case tpat of
+    TPat_Atom Nothing _ -> []
+    TPat_Atom (Just ((num1, den1), (num2, den2))) t ->
+      [TPat_Atom Nothing t]
+        ++ [TPat_Atom (Just ((num1', den1), (num2, den2))) t | num1' <- QC.shrink num1]
+        ++ [TPat_Atom (Just ((num1, den1'), (num2, den2))) t | den1' <- QC.shrink den1]
+        ++ [TPat_Atom (Just ((num1, den1), (num2', den2))) t | num2' <- QC.shrink num2]
+        ++ [TPat_Atom (Just ((num1, den1), (num2, den2'))) t | den2' <- QC.shrink den2]
+    TPat_Stack t -> [TPat_Stack t]
+    TPat_Polyrhythm t1 t2 -> [TPat_Polyrhythm t1' t2' | t1' <- QC.shrink t1, t2' <- QC.shrink t2]
+    _ -> [TPat_Silence]
 
 prop :: TPat Rational -> Bool
 prop tpat = case tpat of

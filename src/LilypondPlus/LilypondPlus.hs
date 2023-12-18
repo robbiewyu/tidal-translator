@@ -215,6 +215,7 @@ data Music
   | -- | Context expression.
     Context String (Maybe String) Music
   | Set String Value
+  | Drums
   deriving (Eq, Show)
 
 instance Pretty Music where
@@ -263,6 +264,7 @@ instance Pretty Music where
     "\\context" <+> string typ <+> pretty name <+> pretty x
   pretty (Set name val) =
     "\\set" <+> string name <+> "=" <+> (string . show) val
+  pretty Drums = string "\\drums"
 
   -- pretty _                        = notImpl "Unknown music expression"
 

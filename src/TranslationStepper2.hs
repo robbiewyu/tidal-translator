@@ -1,6 +1,7 @@
 module TranslationStepper2 where
 
 import Control.Monad (unless, when)
+import Control.Monad.Cont (void)
 import Data.Data (Data)
 import Data.List qualified as List
 import Data.Map (Map, (!?))
@@ -8,7 +9,7 @@ import Data.Map qualified as Map
 import Data.Maybe (fromJust, fromMaybe)
 import Data.Sequence.Internal.Sorting (QList (Nil))
 import Data.Vector qualified as V
-import LilypondPlus.LilypondPlus (Pitch)
+import LilypondPlus.LilypondPlus (Clef (..), Mode (Major), Pitch)
 import LilypondPlus.LilypondPlus as L
   ( Music (..),
   )
@@ -32,25 +33,41 @@ nCyc = 50
 
 -- | Converts table to full piece
 tableToComposition :: Table -> Music
-tableToComposition = undefined
+tableToComposition table =
+  let lcm = getTotLCM table
+      num = bndSimp lcm 1
+      denom = lcm `div` num
+      emptyMeasure = fromJust $ cycleToNotes ((num, denom), Nothing, [cycleRest])
+      voices = map (getVoice (num, denom) emptyMeasure . snd) $ Map.toList table
+   in Sequential [Time num denom, Simultaneous True voices]
 
--- need to first go through columns and standardize time signature
+getTotLCM :: Table -> Integer
+getTotLCM table = foldr (\((n, _), _, _) b -> lcm n b) 1 (concatMap snd (Map.toList table))
 
--- num / denominator is length of measure
--- num = lcm of denominators in durations -> num / 8
--- find lcm of all nums (take out power of 2) and divide by
--- 4 / 4 and 3 / 4. lcm = 12. then 12 / 8 for both
--- 4 / 4 converts to 3 / 4 by  1/4 -> 3 / 16 -> 12 / 16
+-- can factor out max of 2^7 twos
+bndSimp :: Integer -> Int -> Integer
+bndSimp x k = if k <= 0 || odd x then x else bndSimp (x `div` 2) (k - 1)
+
+-- for a single voice, how to separate?
+getVoice :: (Integer, Integer) -> [Music] -> [Cycle] -> Music
+getVoice ts emptyMeasure cs = combine $ foldr f ([], []) cs
+  where
+    f c@(ks, pit, es) (b1, b2) =
+      let res = fromJust (cycleToNotes $ replaceTS ts c)
+       in case pit of
+            Nothing -> (emptyMeasure ++ b1, res ++ b2)
+            Just p -> (Key p Major : res ++ b1, emptyMeasure ++ b2)
+    combine (as, bs) = Simultaneous True [Sequential $ Clef Treble : as, Sequential $ Drums : [Sequential bs]]
 
 silentCycles :: Maybe [Cycle]
 silentCycles = Just $ replicate nCyc ((1, 1), Nothing, [cycleRest])
 
+replaceTS :: (Integer, Integer) -> Cycle -> Cycle
+replaceTS (n, d) (_, b, c) = ((n, d), b, c)
+
 -- | fill up ith to last cycle in oList with pList
 startCycleAt :: Int -> [Cycle] -> [Cycle] -> [Cycle]
 startCycleAt i pList oList = take i oList ++ take (nCyc - i) pList
-
--- >>> startCycleAt 2 [((1,1),Nothing,[Rest (Just 1) []])] [((1,1),Nothing,[Rest (Just 1) []])]
--- [((1,1),Nothing,[Rest (Just (Duration {getDuration = 1 % 1})) []]),((1,1),Nothing,[Rest (Just (Duration {getDuration = 1 % 1})) []])]
 
 update :: Int -> Int -> Maybe [Cycle] -> Table -> Table
 update voice cycNum value = Map.alter f voice
@@ -107,7 +124,7 @@ stepper = go initialStepper
     go ss = do
       res <- prompt
       if fst res == Quit
-        then printDebug (show $ table ss) >> return ()
+        then void (printDebug (show . pretty $ tableToComposition (table ss)))
         else
           let (msg, table', index') = handleResult res (table ss) (index ss)
            in (putStrLn msg >> (go $ Stepper {table = table', history = Just ss, index = index'}))
