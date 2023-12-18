@@ -39,6 +39,13 @@ packages:
       size: 212
   original:
     hackage: prettify-1.0
+- completed:
+    hackage: process-1.6.16.0@sha256:1b9c267e475d4492b80edc1f58d08c458d4a10d17ea95294356443855b125616,2845
+    pantry-tree:
+      sha256: dc130ef74f0400c0761f53abdbcf16588b568ccbe6d43a584a43846d6da08012
+      size: 1545
+  original:
+    hackage: process-1.6.16.0
 snapshots:
 - completed:
     sha256: 2e7d4a730d8eb5373b2d383fac84efcf7c81e3b7a5fce71b4c2e19a1768f25a6

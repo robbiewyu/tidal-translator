@@ -9,7 +9,10 @@ import Data.Ratio
 import Data.Vector qualified as V
 import GHC.Generics
 import GHC.Real (denominator, numerator)
+import Language.Haskellish (string)
+import Language.Haskellish qualified as Language
 import Parse
+import Sound.Tidal.Context (pS)
 import Sound.Tidal.Pattern as Pattern (ControlPattern)
 import Test.HUnit
 import Test.QuickCheck
@@ -19,23 +22,27 @@ import Test.QuickCheck
     Testable (..),
     (==>),
   )
-import Text.Parsec (ParseError, parse, 
-            Parsec, (<|>), oneOf, many1, digit,
-            string, anyChar, try, lookAhead)
+import Text.Parsec
+  ( ParseError,
+    Parsec,
+    anyChar,
+    digit,
+    lookAhead,
+    many1,
+    oneOf,
+    parse,
+    string,
+    try,
+    (<|>),
+  )
+import Text.Parsec.Token qualified as Text.Parsec
 import Text.Pretty
-import Sound.Tidal.Context (pS)
-import Language.Haskellish (string)
-import qualified Language.Haskellish as Language
-import qualified Text.Parsec.Token as Text.Parsec
-
 
 data Option
-  = Slurs
-  | NoSlurs
-  | TimeSignatureBase Integer
+  = TimeSignatureBase Integer
   | CP Integer String
   | Silence Integer
-  | Advance Integer
+  | Advance
   | PrintComp
   | Quit
   deriving (Show, Eq)
@@ -43,23 +50,29 @@ data Option
 setOptionParser :: Parsec String () Option
 -- Uses applicatives to parse the command line options
 setOptionParser =
-  Text.Parsec.lookAhead $ 
-    -- Slurs <$ Text.Parsec.string "slurs"<|>
-     NoSlurs <$ Text.Parsec.string "no-slurs"
-    <|> TimeSignatureBase <$> (Text.Parsec.string "time-signature-base" 
-                <* simpleWhitespace *> ParseConversionCmd.integer)
-    <|> Advance <$> (Text.Parsec.string "advance" 
-                <* simpleWhitespace *> ParseConversionCmd.integer)
-    <|> CP <$> (Text.Parsec.string "d" *> ParseConversionCmd.integer 
-                <* simpleWhitespace <* Text.Parsec.string "$")
+  Text.Parsec.lookAhead $
+    TimeSignatureBase
+      <$> ( Text.Parsec.string "time-signature-base"
+              <* simpleWhitespace
+              *> ParseConversionCmd.integer
+          )
+      <|> Advance <$ Text.Parsec.string "advance"
+      <|> CP
+        <$> ( Text.Parsec.string "d"
+                *> ParseConversionCmd.integer
                 <* simpleWhitespace
-                <*> Text.Parsec.many1 Text.Parsec.anyChar
-    <|> Silence <$> (Text.Parsec.string "silence" *> 
-                simpleWhitespace *> 
-                Text.Parsec.string "d" *>
-                ParseConversionCmd.integer)
-    <|> PrintComp <$ Text.Parsec.string "print-comp"
-    <|> Quit <$ Text.Parsec.string "quit"
+                <* Text.Parsec.string "$"
+            )
+        <* simpleWhitespace
+        <*> Text.Parsec.many1 Text.Parsec.anyChar
+      <|> Silence
+        <$> ( Text.Parsec.string "silence"
+                *> simpleWhitespace
+                *> Text.Parsec.string "d"
+                *> ParseConversionCmd.integer
+            )
+      <|> PrintComp <$ Text.Parsec.string "print-comp"
+      <|> Quit <$ Text.Parsec.string "quit"
 
 simpleWhitespace :: Parsec String () ()
 simpleWhitespace = void $ many1 (oneOf " \t\n")

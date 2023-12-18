@@ -6,6 +6,7 @@ extra-deps:
 - "music-dynamics-literal-1.9.0"
 - "music-pitch-literal-1.9.0"
 - "prettify-1.0"
+- "process-1.6.16.0"
 packages:
 - .
 

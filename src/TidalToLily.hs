@@ -24,7 +24,7 @@ import LilypondPlus.LilypondPlus as L
     beginTie,
   )
 import Parse
-import Sound.Tidal.Context (n)
+import Sound.Tidal.Context (bandf, n, xDefault)
 import Sound.Tidal.Pattern as Pattern
 import Test.HUnit
 import Test.QuickCheck
@@ -43,12 +43,12 @@ import Text.Pretty
   Current naive implementation of retrieving the time signature
   from the ControlPattern's subdivisions.
 -}
-getTimeSig :: [ArcF Time] -> L.Music
+getTimeSig :: [ArcF Time] -> (Integer, Integer)
 getTimeSig subdivisions =
   -- find the smallest common denominator of all the subdivisions
   let denominators = map (\(Arc start finish) -> denominator start) subdivisions
       largestCommonDenominator = foldl lcm 1 denominators
-   in Time largestCommonDenominator 8 -- TODO: for now, eighth note is the base unit of time
+   in (largestCommonDenominator, 8) -- TODO: for now, eighth note is the base unit of time
 
 {-
   Current naive implementation of retrieving the key signature
@@ -81,32 +81,30 @@ getBestFitPitch notes = keySigs V.! snd (foldr compUpd (-1, -1) [0 .. 11])
 
 -- after collecting pitches, iterate through all major scales and see which one hits most notes
 
-getNotes :: Maybe (V.Vector Pitch) -> [Event [ValueMap]] -> [Music]
+getNotes :: Maybe (V.Vector Pitch) -> [Event [ValueMap]] -> Maybe [Music]
 getNotes mPitchMap eventLs = case getTimeSig $ map (\(Event _ _ arc _) -> arc) eventLs of
-  Time num den ->
-    concatMap
-      (eventToMusic mPitchMap num den)
-      eventLs
-  _ -> error "Time signature not found"
+  (num, den) -> foldr f (Just []) (eventToMusic mPitchMap num den <$> eventLs)
+    where
+      f x b = do
+        b' <- b
+        x' <- x
+        return $ x' ++ b'
 
 data Unit
   = URest
   | UChord [L.Note]
   deriving (Show)
 
-eventToMusic :: Maybe (V.Vector Pitch) -> Integer -> Integer -> Event [ValueMap] -> [Music]
+eventToMusic :: Maybe (V.Vector Pitch) -> Integer -> Integer -> Event [ValueMap] -> Maybe [Music]
 eventToMusic mPitchMap num den (Event ctx whole part vms) =
   let (Arc start finish) = part
       duration = finish - start
       duration' = (numerator duration * num) % (denominator duration * den)
       multi = multiNote duration'
    in case parseValueMap mPitchMap vms of
-        Just URest -> map (\dur -> L.Rest (Just dur) []) multi
-        -- Just (UNote p) -> applyTies $ map (\dur -> L.Note (NotePitch p Nothing) (Just dur) []) multi
-        -- Just (UChord ps) -> applyTies $ map (\dur -> L.Chord [(NotePitch p Nothing, []), (NotePitch (Pitch (G, 0, 5)) Nothing, [])] (Just dur) []) multi
-        Just (UChord ps) -> applyTies $ map (\dur -> L.Chord (map (,[]) ps) (Just dur) []) multi
-        -- Just (UDrumChord ps) -> applyTies $ map (\dur -> L.Chord (map (\p -> (DrumNotePitch p Nothing, [])) ps) (Just dur) []) multi
-        Nothing -> error "ValueMap parsing failed"
+        Just URest -> Just $ map (\dur -> L.Rest (Just dur) []) multi
+        Just (UChord ps) -> Just $ applyTies $ map (\dur -> L.Chord (map (,[]) ps) (Just dur) []) multi
+        Nothing -> Nothing
 
 applyTies :: [Music] -> [Music]
 applyTies xs@(a : b : r) = (beginTie <$> init xs) ++ [last xs]
@@ -210,17 +208,14 @@ getPitch2 pitchMap y =
 getNote :: Maybe (V.Vector Pitch) -> ValueMap -> Maybe L.Note
 getNote (Just pitchMap) vm = do
   val <- msum (flip Data.Map.lookup vm <$> ["n", "note"])
-  return
-    ( case val of
-        VN note -> NotePitch (getPitch2 pitchMap $ round note) Nothing
-        _ -> error "Note value not found"
-    )
+  case val of
+    VN note -> return $ NotePitch (getPitch2 pitchMap $ round note) Nothing
+    _ -> Nothing
 getNote Nothing vm = do
   val <- msum (flip Data.Map.lookup vm <$> ["s", "sound"])
-  ( case val of
-      VS str -> flip DrumNotePitch Nothing <$> Data.Map.lookup str drumPitches
-      _ -> error "Drum note value not found"
-    )
+  case val of
+    VS str -> flip DrumNotePitch Nothing <$> Data.Map.lookup str drumPitches
+    _ -> Nothing
 
 drumPitches :: Data.Map.Map String L.DrumPitch
 drumPitches = Data.Map.fromList (map (\i -> (toLower <$> show (toEnum i :: L.DrumPitch), toEnum i)) [0 .. 18])
@@ -275,9 +270,8 @@ handleElem e (Just m) =
           then return $ Data.Map.insert st (fst x, vm : snd x) m'
           else Nothing
 
-getFullRep :: Maybe (Map Time (Time, [ValueMap])) -> [Event [ValueMap]]
-getFullRep (Just m) = (\(t0, (t1, vm)) -> Event {context = Pattern.Context [], whole = Nothing, part = Arc t0 t1, value = vm}) <$> Data.Map.toAscList m
-getFullRep Nothing = error "getFullRep: invalid overlapping"
+getFullRep :: Map Time (Time, [ValueMap]) -> [Event [ValueMap]]
+getFullRep m = (\(t0, (t1, vm)) -> Event {context = Pattern.Context [], whole = Nothing, part = Arc t0 t1, value = vm}) <$> Data.Map.toAscList m
 
 getClef :: [Event a] -> Music
 getClef eventLs = Clef Treble
@@ -285,29 +279,64 @@ getClef eventLs = Clef Treble
 withinSubset :: ControlPattern -> Bool
 withinSubset _ = True -- TODO
 
-controlPatternConverter :: String -> ControlPattern
+controlPatternConverter :: String -> Maybe ControlPattern
 -- Note, ControlPattern = Pattern ValueMap
-controlPatternConverter inputTidalStr =
-  let tidalPattern = parseTidal inputTidalStr
-   in case tidalPattern of
-        Left err -> error $ show err
-        Right tidalPat ->
-          if withinSubset tidalPat
-            then tidalPat
-            else error "Tidal pattern not within subset"
+controlPatternConverter inputTidalStr = case parseTidal inputTidalStr of
+  Left err -> Nothing
+  Right tidalPat -> Just tidalPat
 
-tidalToLilypond :: ControlPattern -> Music
-tidalToLilypond tidalPat =
-  let eventLs1 = queryArc tidalPat (Arc 0 1)
-      eventLs = tail $ insertRests $ (getFullRep . getChordRep) $ eventLs1
-      subdivisions = map part eventLs
-      timeSig = getTimeSig subdivisions
-      key = getKeySig eventLs1
-      clef = getClef eventLs
-      notes = getNotes (key >>= (return . getPitchMap)) eventLs
-   in if isJust key
-        then Sequential [clef, Key (fromJust key) Major, timeSig, Sequential notes]
-        else Sequential [Clef Percussion, timeSig, Sequential notes]
+type Cycle = ((Integer, Integer), Maybe Pitch, [Music])
+
+cycleToMeasure :: Time -> ControlPattern -> Maybe Cycle
+cycleToMeasure st tidalPat =
+  let eventLs1 = offsetArc st <$> queryArc tidalPat (Arc st (st + 1))
+   in do
+        eventLs <- tail . insertRests <$> (getFullRep <$> getChordRep eventLs1)
+        let subdivisions = map part eventLs
+            timeSig = getTimeSig subdivisions
+            key = getKeySig eventLs1
+         in do
+              notes <- getNotes (key >>= (return . getPitchMap)) eventLs
+              return (timeSig, key, notes)
+
+offsetArc :: Rational -> Event a -> Event a
+offsetArc st e =
+  let x = start $ part e
+      y = stop $ part e
+      xw = start $ fromJust $ whole e
+      yw = stop $ fromJust $ whole e
+   in e {part = Arc {start = x - st, stop = y - st}, whole = Just $ Arc {start = xw - st, stop = yw - st}}
+
+-- let eventLs1 = queryArc tidalPat (Arc st st + 1)
+--     eventLs = tail $ insertRests $ (getFullRep . getChordRep) $ eventLs1
+--     subdivisions = map part eventLs
+--     timeSig = getTimeSig subdivisions
+--     key = getKeySig eventLs1
+--  in do
+--       notes <- getNotes (key >>= (return . getPitchMap)) eventLs
+--       return (timeSig, key, notes)
+
+-- tidalToLilypond :: ControlPattern -> Music
+-- tidalToLilypond tidalPat =
+--   let eventLs1 = queryArc tidalPat (Arc 0 1)
+--       eventLs = tail $ insertRests $ (getFullRep . getChordRep) $ eventLs1
+--       subdivisions = map part eventLs
+--       timeSig = getTimeSig subdivisions
+--       key = getKeySig eventLs1
+--       clef = getClef eventLs
+--       notes = getNotes (key >>= (return . getPitchMap)) eventLs
+--    in if isJust key
+--         then Sequential [clef, Key (fromJust key) Major, timeSig, Sequential notes]
+--         else Sequential [Clef Percussion, timeSig, Sequential notes]
+
+-- goal: convert stepper into lilypond object
+-- must go voice-by-voice
+--
+
+--
+
+-- step 1: for each voice, have list of (notes, Maybe keysig, timesig)
+-- get list of each voice's note representation with time sig changes every measure
 
 -- chord interpretation
 -- random patterns - use random seed
