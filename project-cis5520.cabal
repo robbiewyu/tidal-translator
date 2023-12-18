@@ -64,7 +64,7 @@ library
       LilypondPlus.Pitch
       ParseConversionCmd
       TidalParseTest
-      TranslationStepper
+      -- TranslationStepper
       TranslationStepper2
       -- if you add modules to your project, list them here
       -- so that they will be available to the executable and test suite
@@ -92,7 +92,7 @@ test-suite project-cis5520-test
       Spec.hs
   hs-source-dirs:
       test
-  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N  -Wno-type-defaults -fwarn-incomplete-patterns
   other-modules:
       TidalParseTest
       TidalToLilyCheck

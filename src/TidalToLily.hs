@@ -244,6 +244,9 @@ multiNote duration =
   A duration is strange if it is not a power of 2 (negative exponents allowed).
 -}
 
+cycleRest :: Event [ValueMap]
+cycleRest = Event {context = Pattern.Context [], whole = Just (Arc 0 1), part = Arc 0 1, value = []}
+
 insertRests :: [Event [ValueMap]] -> [Event [ValueMap]]
 insertRests es = foldr f [] (Event {context = Pattern.Context [], whole = Nothing, part = Arc 0 0, value = []} : es)
   where
@@ -285,19 +288,29 @@ controlPatternConverter inputTidalStr = case parseTidal inputTidalStr of
   Left err -> Nothing
   Right tidalPat -> Just tidalPat
 
-type Cycle = ((Integer, Integer), Maybe Pitch, [Music])
+type Cycle = ((Integer, Integer), Maybe Pitch, [Event [ValueMap]])
 
-cycleToMeasure :: Time -> ControlPattern -> Maybe Cycle
-cycleToMeasure st tidalPat =
+cycleToNotes :: Cycle -> Maybe [Music]
+cycleToNotes cycle@((num, den), mPitch, eventLs) =
+  let pitchMap = getPitchMap <$> mPitch
+   in foldr f (Just []) (eventToMusic pitchMap num den <$> eventLs)
+  where
+    f x b = do
+      b' <- b
+      x' <- x
+      return $ x' ++ b'
+
+-- getNotes (mPitch >>= (return . getPitchMap)) eventLs
+
+getInfo :: Time -> ControlPattern -> Maybe Cycle
+getInfo st tidalPat =
   let eventLs1 = offsetArc st <$> queryArc tidalPat (Arc st (st + 1))
    in do
         eventLs <- tail . insertRests <$> (getFullRep <$> getChordRep eventLs1)
         let subdivisions = map part eventLs
             timeSig = getTimeSig subdivisions
             key = getKeySig eventLs1
-         in do
-              notes <- getNotes (key >>= (return . getPitchMap)) eventLs
-              return (timeSig, key, notes)
+         in return (timeSig, key, eventLs)
 
 offsetArc :: Rational -> Event a -> Event a
 offsetArc st e =

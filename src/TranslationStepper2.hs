@@ -22,7 +22,7 @@ import Test.HUnit (Counts, Test (..), runTestTT, (~:), (~?=))
 import Test.QuickCheck qualified as QC
 import Text.Pretty
 import Text.Read (readMaybe)
-import TidalToLily (Cycle, controlPatternConverter, cycleToMeasure)
+import TidalToLily (Cycle, controlPatternConverter, cycleRest, cycleToNotes, getInfo)
 
 -- | A type for representing the current state of the translation.
 type Table = Map Int [Cycle]
@@ -40,10 +40,10 @@ tableToComposition = undefined
 -- num = lcm of denominators in durations -> num / 8
 -- find lcm of all nums (take out power of 2) and divide by
 -- 4 / 4 and 3 / 4. lcm = 12. then 12 / 8 for both
--- 4 / 4 converts to 3 / 4 by  1/4 -> 3 / 16
+-- 4 / 4 converts to 3 / 4 by  1/4 -> 3 / 16 -> 12 / 16
 
 silentCycles :: Maybe [Cycle]
-silentCycles = Just $ replicate nCyc ((1, 1), Nothing, [Rest (Just 1) []])
+silentCycles = Just $ replicate nCyc ((1, 1), Nothing, [cycleRest])
 
 -- | fill up ith to last cycle in oList with pList
 startCycleAt :: Int -> [Cycle] -> [Cycle] -> [Cycle]
@@ -69,7 +69,13 @@ update voice cycNum value = Map.alter f voice
 getCycleList :: String -> Maybe [Cycle]
 getCycleList cp = mapM f [0 .. (nCyc - 1)]
   where
-    f i = (controlPatternConverter cp) >>= (cycleToMeasure (toRational i))
+    f i = do
+      cPat <- controlPatternConverter cp
+      info <- getInfo (toRational i) cPat
+      endRes <- cycleToNotes info
+      return info
+
+-- controlPatternConverter cp >>= cycleToMeasure (toRational i)
 
 ----------
 
