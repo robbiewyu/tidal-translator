@@ -43,7 +43,7 @@ import qualified Data.Functor as Data.Bifunctor
 -- import qualified Control.Arrow as them
 
 {-
-  Current naive implementation of retrieving the time signature
+  Current eighth note base implementation of retrieving the time signature
   from the ControlPattern's subdivisions.
 -}
 getTimeSig :: [ArcF Time] -> (Integer, Integer)
@@ -57,7 +57,7 @@ getTimeSig subdivisions =
    in (largestCommonDenominator, 8)
 
 {-
-  Current naive implementation of retrieving the key signature
+  Naive implementation of retrieving the key signature
   from the ControlPattern's subdivisions.
 -}
 
@@ -88,7 +88,7 @@ getBestFitPitch notes = keySigs V.! snd (foldr compUpd (-1, -1) [0 .. 11])
       let res = countNumInScale s notes
        in max (res, s) tup
 
--- after collecting pitches, 
+-- After collecting pitches, 
 -- iterate through major scales and see which one hits most notes
 
 getNotes :: Maybe (V.Vector Pitch) -> [Event [ValueMap]] -> Maybe [Music]
@@ -123,15 +123,13 @@ applyTies :: [Music] -> [Music]
 applyTies xs@(a : b : r) = (beginTie <$> init xs) ++ [last xs]
 applyTies xs = xs
 
--- returns correct lilypond unit with arbitrary duration
+-- Returns correct lilypond unit with arbitrary duration
 parseValueMap :: Maybe (V.Vector Pitch) -> [ValueMap] -> Maybe Unit
 parseValueMap mPitchMap vms = msum triedList
   where
     triedList = [getRest vms, UChord <$> mapM (getNote mPitchMap) vms]
 
--- apply something at the end to modify pitches
-
--- half-steps for a major scale, with 0 as the base
+-- Half-steps for a major scale, with 0 as the base
 
 majorScale :: V.Vector Int
 majorScale = V.fromList [0, 2, 4, 5, 7, 9, 11]
@@ -159,11 +157,11 @@ scaleNeighbors :: V.Vector (Int, Int)
 scaleNeighbors = V.fromList [(0, 0), (0, 1), (1, 1), (1, 2), (2, 2), (3, 3),
   (3, 4), (4, 4), (4, 5), (5, 5), (5, 6), (6, 6)]
 
--- pitch class to preferred accidental (sharp = 1, flat = -1)
+-- Pitch class to preferred accidental (sharp = 1, flat = -1)
 pcToAccidental :: V.Vector Int
 pcToAccidental = V.fromList [1, 1, 1, -1, 1, 1, 1]
 
--- get major scale, with accidentals notated canonically
+-- Get major scale, with accidentals notated canonically
 -- octaves of all notes (pre-accidentals) are the same
 getMajorScale :: Pitch -> V.Vector Pitch
 getMajorScale p =
@@ -190,7 +188,7 @@ getMajorScale p =
 getRelValue :: Pitch -> Int
 getRelValue (Pitch (a, b, c)) = (majorScale V.! fromEnum a) + b + 12 * c
 
--- expresses x with the same letter as p, using p's octave
+-- Expresses x with the same letter as p, using p's octave
 modifyPitch :: Pitch -> Int -> Pitch
 modifyPitch p@(Pitch (a, b, c)) x = Pitch (a, b + x - getRelValue p, c)
 
@@ -206,7 +204,7 @@ getBestNeighbor scale pref i =
   where
     noteInt = (i + getRelValue (V.head scale)) `mod` 12
 
--- given major scale key, 
+-- Given major scale key, 
 -- returns a length 12 list from note mod values to pitches
 -- start from relative, then do rotation
 -- imperatively, start with [x, _, x, _ x, x, _, x, _, x, _, x]
@@ -221,7 +219,7 @@ getPitchMap p =
      in
       map (getBestNeighbor scale pref . (\a -> (a + cDiff) `mod` 12)) [0 .. 11]
 
--- if in scale, then output the same. 
+-- If in scale, then output the same. 
 -- Otherwise, find something that naturals or follow accidental direction
 getPitch2 :: V.Vector Pitch -> Int -> Pitch
 getPitch2 pitchMap y =
@@ -283,7 +281,7 @@ whole = Nothing, part = Arc 0 0, value = []} : es)
             else x : (Event {context = Pattern.Context [], whole = Nothing,
             part = Arc t1 t2, value = []}) : ys
 
--- reject control sequences where 2 overlapping events don't overlap perfectly
+-- Reject control sequences where 2 overlapping events don't overlap perfectly
 
 getChordRep :: [Event ValueMap] -> Maybe (Map Time (Time, [ValueMap]))
 getChordRep vms = do 

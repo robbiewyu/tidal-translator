@@ -33,8 +33,6 @@ type Table = Map Int [Cycle]
 nCyc :: Int
 nCyc = 50
 
-
-
 -- | Converts table to full piece
 tableToComposition :: Table -> Music
 tableToComposition table =

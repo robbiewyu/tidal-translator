@@ -140,7 +140,6 @@ where
 
 import Control.Arrow (first, second, (***), (<<<))
 import Data.Default
--- import System.Process -- TODO debug
 
 import Data.Music.Lilypond.Dynamics
 import Data.Music.Lilypond.Value
@@ -255,8 +254,6 @@ instance Pretty Music where
   pretty (Tempo (Just t) Nothing) = "\\time" <+> pretty t
   pretty (Tempo Nothing (Just (d, bpm))) = "\\time" <+> pretty d <+> "=" <+> pretty bpm
   pretty (Tempo (Just t) (Just (d, bpm))) = "\\time" <+> pretty t <+> pretty d <+> "=" <+> pretty bpm
-  -- TODO metronome
-  -- TODO tempo
 
   pretty (New typ name x) =
     "\\new" <+> string typ <+> pretty name <+> pretty x

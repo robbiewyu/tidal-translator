@@ -75,31 +75,20 @@ data TPat a where
   TPatSlow :: TPat Time -> TPat a -> TPat a
   TPatCycleChoose :: Int -> [TPat a] -> TPat a
   TPatStack :: [TPat a] -> TPat a
-  --   TPat_Polyrhythm :: Maybe (TPat Rational) -> [TPat a] -> TPat a
   TPatSeq :: [TPat a] -> TPat a
   TPatSilence :: TPat a
   TPatRepeat :: Int -> TPat a -> TPat a
-  TPatEnumFromTo :: TPat a -> TPat a -> TPat a
-  --   TPat_Chord ::
-  --     (Num b, Enum b, Parseable b, Enumerable b) =>
-  --     (b -> a) ->
-  --     TPat b ->
-  --     TPat String ->
-  --     [TPat [Modifier]] ->
-  --     TPat a
-  TPatVar :: String -> TPat a
 
 -- | TRANSLATION FUNCTIONS
 
 -- | Takes a TPat and converts it into a Lilypond voice
 translateTPat :: TPat a -> LVoice
 translateTPat tpat = case tpat of
-  -- TODO: handle time signatures, key signatures, mathematical details, etc.
   TPatAtom Nothing a -> Perc (4, 4) (translateAtom a)
   TPatAtom (Just (num, denom)) a -> Melody num Cn [Rest 1]
   TPatFast tpat' a -> translateTPat tpat'
   TPatSlow tpat' a -> translateTPat tpat'
-  TPatCycleChoose n tpat' -> Perc (4, 4) (translateCycleChoose n tpat') -- list/state
+  TPatCycleChoose n tpat' -> Perc (4, 4) (translateCycleChoose n tpat')
   TPatStack tpat' -> Perc (4, 4) (translateStack tpat')
   TPatSeq tpat' -> Perc (4, 4) (translateSeq tpat')
   TPatSilence -> Perc (4, 4) translateSilence
@@ -131,9 +120,6 @@ translateEnumFromTo = undefined
 translateVar :: String -> [String]
 translateVar = undefined
 
--- We will use a helper to convert a ControlPattern (Event ValueMap) into
--- time-value pairs
-
 -- | TESTING
 testCheckValid :: Test
 testCheckValid =
@@ -144,11 +130,10 @@ testCheckValid =
       "Valid 2" ~: isNothing (lineParser "d2 $ n \"<[e e f g] [g f e _]>\" # sound \"superpiano\"") ~?= False
     ]
 
--- instance Arbitrary TPat a where
---   arbitrary = undefined
 
--- | for round-trip testing. Will generate a tiny subset of lilypond voices such that
--- they're an (almost) unique LilyPond correspondent to their corresponding Tidal expression
+-- For round-trip testing. Will generate a tiny subset of lilypond voices 
+-- such that they're an (almost) unique LilyPond correspondent to their 
+-- corresponding Tidal expression
 instance Arbitrary LVoice where
   arbitrary = undefined
 
@@ -156,13 +141,6 @@ instance Arbitrary LVoice where
 -- by the above, it converts it into a Tidal expression and otherwise gives Nothing
 voiceToLine :: LVoice -> Maybe String
 voiceToLine = undefined
-
--- prop_miniRoundTrip :: LVoice -> Bool
--- prop_miniRoundTrip voice =
---   let convertible = isJust (voiceToLine voice)
---    in not convertible && (lineParser (fromJust (voiceToLine voice)) == voice)
-
--- not $ isNothing (voiceToLine voice) ==> (lineParser . voiceToLine voice == voice)
 
 -- Not an immediate goal, but we might use some advanced I/O to
 -- test that converting a Tidal expression to MIDI via the Tidal application
@@ -177,14 +155,11 @@ type TimeSig = (Int, Int) -- (numerator, denominator)
 --}
 getTimeSig :: [ArcF Time] -> TimeSig
 getTimeSig subdivisions =
-  -- find the smallest common denominator of all the subdivisions
   let denominators :: [Int] = map (\(Arc start finish) -> fromIntegral $ denominator start) subdivisions
       largestCommonDenominator = foldl lcm 1 denominators
-      -- get the largest factor from 2 - 9 that divides largestCommonDenominator
       largestFactor = head $ filter (\x -> largestCommonDenominator `mod` x == 0) [2..9]
       in
-        -- (largestFactor, 8)
-        (largestCommonDenominator, largestCommonDenominator) -- TODO: for now, quarter note is the base unit of time
+        (largestCommonDenominator, largestCommonDenominator)
 
 getNotes :: [Event a] -> [LUnit]
 getNotes eventLs =
@@ -195,27 +170,23 @@ getNotes eventLs =
             duration = finish - start
             len = fromIntegral $ quot numTimeSig duration
             in
-              Lib.Note ((C, 4, Nothing), 1) -- TODO: what does 4 and 1 mean, how are they different?
+              Lib.Note ((C, 4, Nothing), 1)
       ) eventLs
 
 
-
-withinSubset :: ControlPattern -> Bool
-withinSubset _ = True -- TODO
-
-
-controlPatternConverter :: String -> ControlPattern -- ControlPattern = Pattern ValueMap
+-- ControlPattern = Pattern ValueMap
+controlPatternConverter :: String -> ControlPattern 
 controlPatternConverter inputTidalStr =
   let tidalPattern = parseTidal inputTidalStr
   in
     case tidalPattern of
       Left err -> error $ show err
-      Right tidalPat -> if withinSubset tidalPat then tidalPat else error "Tidal pattern not within subset"
+      Right tidalPat -> if withinSubset tidalPat 
+        then tidalPat else error "Tidal pattern not within subset"
 
 tidalToLilypond :: ControlPattern -> LVoice
 tidalToLilypond tidalPat =
   let eventLs = queryArc tidalPat (Arc 0 1)
-      -- get all part from eventLs (i.e. accumulate part eventL for each eventL in eventLs)
       subdivisions = map part eventLs
       timeSig = getTimeSig subdivisions
       notes = getNotes eventLs

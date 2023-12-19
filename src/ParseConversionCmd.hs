@@ -91,23 +91,17 @@ integer = read <$> many1 digit
 parseCommand :: String -> Either ParseError Option
 parseCommand = parse setOptionParser ""
 
--- >>> parse setOptionParser "" "time-signature-base   2 "
--- Right (TimeSignatureBase 2)
+-- >>> parse setOptionParser "" "advance "
+-- Right Advance
 
--- >>> parse setOptionParser "" "advance    2  "
--- Right (Advance 2)
+-- >>> parse setOptionParser "" "quit"
+-- Right Quit
 
--- >>> parse setOptionParser "" "slurs"
--- Right Slurs
-
--- >>> parse setOptionParser "" "no-slurs"
--- Right NoSlurs
+-- >>> parse setOptionParser "" "undo "
+-- Right Undo
 
 -- >>> parse setOptionParser "" "d2    $    s    \"bd\""
--- Right (CP 2 (0>1)|s: "bd")
+-- Right (CP 2 "s    \"bd\"")
+
 -- >>> parse setOptionParser "" "d2 $ s \"[bd bd bd] bd bd\""
--- Right (CP 2  (0>⅑)|s: "bd"
--- (⅑>²₉)|s: "bd"
--- (²₉>⅓)|s: "bd"
---  (⅓>⅔)|s: "bd"
---  (⅔>1)|s: "bd")
+-- Right (CP 2 "s \"[bd bd bd] bd bd\"")

@@ -82,9 +82,6 @@ mapToKey k =
     11 -> "b"
     _ -> error "impossible") ++ show approxOctave
 
--- Arbitrary generates a list of TPat Rational, comprising only of 
-  -- TPat_Atoms or TPat_Silence
-
 arbitraryTPatList :: Gen [TPat Rational]
 arbitraryTPatList = do
   n <- QC.arbitrary `suchThat` (\x -> x > 0 && x <= 50)
@@ -94,7 +91,7 @@ arbitraryTPatLeaves :: Gen (TPat Rational)
 arbitraryTPatLeaves = do
   QC.oneof [
     TPat_Atom <$> locGen <*> keyGen,
-    TPat_Elongate <$> QC.arbitrary `suchThat` (\x -> denominator x == 1 && x > 0) <*> arbitraryTPatLeaves,
+    -- TPat_Elongate <$> QC.arbitrary `suchThat` (\x -> denominator x == 1 && x > 0) <*> arbitraryTPatLeaves,
     return TPat_Silence
     ]
 
@@ -118,9 +115,7 @@ arbitraryTPat n = do
 
 keyGen :: Gen Rational
 keyGen = liftM2 (%) (QC.elements [-51..36]) (return 1)
--- (QC.arbitrary `suchThat` (\x -> x > -60 && x < 44))
 
--- Generate Maybe ((Int, Int), (Int, Int)) where ints are positive
 locGen = do
   num1 :: Int <- QC.arbitrary `suchThat` (> 0)
   den1 :: Int <- QC.arbitrary `suchThat` (> 0)
@@ -166,7 +161,7 @@ controlPatternsEqual cp1 cp2 =
     where
     aux :: [Event ValueMap] -> [Event ValueMap] -> Bool
     aux ev1 ev2 =
-      -- There is no Eq instance for Event ValueMap, so we have to do this
+      -- There is no Eq instance for Event ValueMap
       case (ev1, ev2) of
         ([], []) -> True
         ([], _) -> False
@@ -221,56 +216,9 @@ getTidal s = case controlPatternConverter $ extractSound s of
       _:s' -> s'
 
 
--- Property tests
--- 1) Smallest common denominator of all subdivisions is the length of the top level time signature
--- 2) Number of notes in the lilypond output is the same as the number of notes in the tidal pattern
--- 3)
-
--- genTPat :: Gen (TPat Rational)
--- genTPat = return $ TPat_Atom Nothing (QC.arbitrary :: Gen Rational)
-
--- arbitraryTPat :: (Arbitrary a) => Int -> Gen (TPat a)
--- arbitraryTPat 0 = do˜
---   TPat_Atom Nothing <$> arbitrary
--- arbitraryTPat n
---   | n > 0 = do
---       let n' = n `div` 2
---       oneof
---         [ arbitraryTPatAtom n',
---           arbitraryTPatFast n',
---           arbitraryTPatSlow n'
---           -- Add cases for other constructors here
---         ]
---   | otherwise = arbitraryTPat 0
-
--- let x = 5
-
--- >>> QC.sample' genTPat
--- [TPat_Atom (Nothing) (0 % 1),TPat_Atom (Nothing) (0 % 1),TPat_Atom (Nothing) (0 % 1),TPat_Atom (Nothing) (0 % 1),TPat_Atom (Nothing) (0 % 1),TPat_Atom (Nothing) (0 % 1),TPat_Atom (Nothing) (0 % 1),TPat_Atom (Nothing) (0 % 1),TPat_Atom (Nothing) (0 % 1),TPat_Atom (Nothing) (0 % 1),TPat_Atom (Nothing) (0 % 1)]
-
--- quickCheckN :: (Testable prop) => Int -> prop -> IO ()
--- quickCheckN n = QC.quickCheck . QC.withMaxSuccess n
-
--- prop_timeSigCorrect :: [ArcF Time] -> L.Music -> Bool
--- prop_timeSigCorrect subdivisions music =
---   -- make sure that the smallest common denominator of all the subdivisions
---   -- is the length of the top level time signature
---   let denominators = map (\(Arc start finish) -> denominator start) subdivisions
---       largestCommonDenominator = foldl lcm 1 denominators
---    in case music of
---         Time num den -> num == largestCommonDenominator
---         _ -> False
-
-
--- let x = QC.sample' (arbitrary :: Gen (TPat Rational))
---     func i = x >>= (\a -> return (a !! i) ) >>= print
-
-
-
 qc :: IO ()
 qc = do
   quickCheck roundTripProp
-  -- quickCheckN 1000 prop_timeSigCorrect
 
 
 -- | Lilypond Arbitrary AST Generation

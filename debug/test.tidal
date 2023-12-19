@@ -1,5 +1,5 @@
 debug/test.mid
 inferred polyphony is 1
-quanta: 4
+quanta: 18
 voices: 1
-slow (2.0/4) $      n "c8 ~ ~ ds4"
+slow (9.0/4) $      n "~ f7 fs6 d4 e3 ~ e5 b3 ~ a5 ~ ~ g7 ~ ~ ~ fs7 ~"

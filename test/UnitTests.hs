@@ -73,7 +73,6 @@ testMultiNote = "multiNote" ~:
         | p <- [0..6], let b = 2^p, a <- [0..b]
     ]
 
--- TODO: test insertRests, getFullRep <$> getChordRep
 
 testInsertRests :: Test
 testInsertRests = "insertRests" ~:
@@ -99,13 +98,14 @@ testGetFullAndChord = "getFullRep and getChordRep" ~:
     where
         composed x = getChordRep x Data.Functor.<&> getFullRep
 
-
-
--- -- | Parsing tests for the stepper 
--- testParseCommands :: Test
--- testParseCommands = "test parsing commands for stepper" ~:
---     TestList [
---         parse setOptionParser "" "advance     2" ~?= Right (Advance 2),
---         show . parse setOptionParser "" "d2    $    s    \"bd\"" ~?= "Right (CP 2 (0>1)|s: \"bd\")",
---         show . parse setOptionParser "" "d2 $ s \"[bd bd bd] bd bd\"" ~?= "Right (CP 2  (0>⅑)|s: \"bd\" (⅑>²₉)|s: \"bd\" (²₉>⅓)|s: \"bd\" (⅓>⅔)|s: \"bd\" (⅔>1)|s: \"bd\")"
---     ]
+test_all :: IO Counts
+test_all = runTestTT $ TestList [
+    testGetTimeSig,
+    testCountNumInScale,
+    testGetBestFitPitch,
+    testGetPitchMap,
+    testGetPitch,
+    testMultiNote,
+    testInsertRests,
+    testGetFullAndChord
+    ]
