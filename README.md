@@ -132,6 +132,13 @@ Pattern with time manipulation
 ```
 > d1 $ every 3 (hurry 2) $ sound "bd sn [~ bd] [sn bd*2]"
 ```
+Showcasing our key signature inference
+```
+> d1 $ n "c d e f g a b c6"
+> d2 $ n "c d e f g a b c6" |+ n "1"
+> d3 $ n "c d e f g a b c6" |+ n "4"
+```
+
 A special song that showcases most capabilities
 ```
 > d1 $ n "<[e _ _ e _ _ d _ _ _ _ _ g4 a4 c a4] [d _ _ d _ _ c _ _ _ _ _ g4 a4 c a4] [c _ _ d _ _ b4 _ _ a4 g4 _ _ _ g4 _] [d c _ [g4 a4 c a4]]>"
