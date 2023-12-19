@@ -89,8 +89,9 @@ LilypondPlus directory contains expanded Lilypond expressions to enable drum not
 the parser for TidalCycles is not exposed, we also copied and made minor changes to their parser 
 (see `src/Parse.hs`), as well their tests (see `test/TidalParseTest`).
 
-As mentioned above, `python-midi` and `midi_to_tidalcycles` are also imported, but these are
-Python libraries used for roundtrip testing.
+As mentioned above, [python-midi](https://github.com/vishnubob/python-midi) and 
+(`midi_to_tidalcycles`)[https://github.com/TylerMclaughlin/midi_to_tidalcycles] 
+are also imported, but these are Python libraries used for roundtrip testing.
 
 
 
