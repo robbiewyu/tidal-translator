@@ -1,0 +1,5 @@
+debug/test.mid
+inferred polyphony is 1
+quanta: 4
+voices: 1
+slow (2.0/4) $      n "c8 ~ ~ ds4"

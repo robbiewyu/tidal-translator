@@ -71,7 +71,7 @@ instance Pretty Pitch where
       acc n
         | n < 0 = concat $ replicate (negate n) "es"
         | n == 0 = ""
-        | n > 0 = concat $ replicate (n) "is"
+        | n > 0 = concat $ replicate n "is"
       oct n
         | n < 0 = concat $ replicate (negate n) ","
         | n == 0 = ""

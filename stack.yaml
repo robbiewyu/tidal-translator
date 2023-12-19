@@ -7,6 +7,7 @@ extra-deps:
 - "music-pitch-literal-1.9.0"
 - "prettify-1.0"
 - "process-1.6.16.0"
+- "bytestring-0.11.4.0"
 packages:
 - .
 

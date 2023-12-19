@@ -45,18 +45,20 @@ data Option
   | Advance
   | PrintComp
   | Quit
+  | Undo
   deriving (Show, Eq)
 
 setOptionParser :: Parsec String () Option
 -- Uses applicatives to parse the command line options
 setOptionParser =
   Text.Parsec.lookAhead $
-    TimeSignatureBase
-      <$> ( Text.Parsec.string "time-signature-base"
-              <* simpleWhitespace
-              *> ParseConversionCmd.integer
-          )
-      <|> Advance <$ Text.Parsec.string "advance"
+    -- TimeSignatureBase
+    --   <$> ( Text.Parsec.string "time-signature-base"
+    --           <* simpleWhitespace
+    --           *> ParseConversionCmd.integer
+    --       )
+    -- <|> 
+      Advance <$ Text.Parsec.string "advance"
       <|> CP
         <$> ( Text.Parsec.string "d"
                 *> ParseConversionCmd.integer
@@ -73,6 +75,7 @@ setOptionParser =
             )
       <|> PrintComp <$ Text.Parsec.string "print-comp"
       <|> Quit <$ Text.Parsec.string "quit"
+      <|> Undo <$ Text.Parsec.string "undo"
 
 simpleWhitespace :: Parsec String () ()
 simpleWhitespace = void $ many1 (oneOf " \t\n")

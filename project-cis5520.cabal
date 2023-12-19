@@ -47,6 +47,7 @@ common common-stanza
     , data-default
     , music-pitch-literal
     , process
+    , bytestring
   default-language:
     GHC2021
   default-extensions:
@@ -63,7 +64,6 @@ library
       LilypondPlus.LilypondPlus
       LilypondPlus.Pitch
       ParseConversionCmd
-      TidalParseTest
       -- TranslationStepper
       TranslationStepper2
       -- if you add modules to your project, list them here
@@ -96,6 +96,7 @@ test-suite project-cis5520-test
   other-modules:
       TidalParseTest
       TidalToLilyCheck
+      UnitTests
   build-depends:
       project-cis5520
       , microspec

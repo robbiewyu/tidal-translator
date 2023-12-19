@@ -23,7 +23,9 @@ import Test.HUnit (Counts, Test (..), runTestTT, (~:), (~?=))
 import Test.QuickCheck qualified as QC
 import Text.Pretty
 import Text.Read (readMaybe)
-import TidalToLily (Cycle, controlPatternConverter, cycleRest, cycleToNotes, getInfo)
+import TidalToLily 
+  (Cycle, controlPatternConverter, cycleRest, cycleToNotes, getInfo)
+import qualified Data.ByteString as BS
 
 -- | A type for representing the current state of the translation.
 type Table = Map Int [Cycle]
@@ -31,18 +33,22 @@ type Table = Map Int [Cycle]
 nCyc :: Int
 nCyc = 50
 
+
+
 -- | Converts table to full piece
 tableToComposition :: Table -> Music
 tableToComposition table =
   let lcm = getTotLCM table
       num = bndSimp lcm 1
       denom = lcm `div` num
-      emptyMeasure = fromJust $ cycleToNotes ((num, denom), Nothing, [cycleRest])
+      emptyMeasure = fromJust $ 
+        cycleToNotes ((num, denom), Nothing, [cycleRest])
       voices = map (getVoice (num, denom) emptyMeasure . snd) $ Map.toList table
-   in Sequential [Time num denom, Simultaneous True voices]
+   in Sequential [Time num denom, Simultaneous False voices]
 
 getTotLCM :: Table -> Integer
-getTotLCM table = foldr (\((n, _), _, _) b -> lcm n b) 1 (concatMap snd (Map.toList table))
+getTotLCM table = foldr (\((n, _), _, _) b -> lcm n b) 1 
+  (concatMap snd (Map.toList table))
 
 -- can factor out max of 2^7 twos
 bndSimp :: Integer -> Int -> Integer
@@ -57,7 +63,8 @@ getVoice ts emptyMeasure cs = combine $ foldr f ([], []) cs
        in case pit of
             Nothing -> (emptyMeasure ++ b1, res ++ b2)
             Just p -> (Key p Major : res ++ b1, emptyMeasure ++ b2)
-    combine (as, bs) = Simultaneous True [Sequential $ Clef Treble : as, Sequential $ Drums : [Sequential bs]]
+    combine (as, bs) = New "Staff" Nothing $ Simultaneous True 
+      [Sequential as, Sequential $ Drums : [Sequential bs]]
 
 silentCycles :: Maybe [Cycle]
 silentCycles = Just $ replicate nCyc ((1, 1), Nothing, [cycleRest])
@@ -92,16 +99,10 @@ getCycleList cp = mapM f [0 .. (nCyc - 1)]
       endRes <- cycleToNotes info
       return info
 
--- controlPatternConverter cp >>= cycleToMeasure (toRational i)
 
 ----------
 
 -- | Main top-level loop
-
--- Store should contain parsed versions of each pattern, segmented into cycles
---
-
--- easiest: each stepper or iteration contains active patterns, parsed into cycleLimit cycles, as well as
 
 data Stepper = Stepper
   { table :: Table,
@@ -124,17 +125,27 @@ stepper = go initialStepper
     go ss = do
       res <- prompt
       if fst res == Quit
-        then void (printDebug (show . pretty $ tableToComposition (table ss)))
+        then void 
+          (writeAndScore "outputs/stepper_output.ly" 
+            (tableToComposition $ table ss))
+      else if fst res == Undo
+        then case history ss of
+          Just h -> go h
+          Nothing -> putStrLn "Can't undo" >> go ss
+      else if fst res == PrintComp
+        then print (table ss) >> go ss
         else
           let (msg, table', index') = handleResult res (table ss) (index ss)
-           in (putStrLn msg >> (go $ Stepper {table = table', history = Just ss, index = index'}))
+           in (putStrLn msg >> 
+            (go $ Stepper {table = table', history = Just ss, index = index'}))
 
 handleResult :: (Option, Maybe [Cycle]) -> Table -> Int -> (String, Table, Int)
 handleResult (opt, mCyc) table index = case opt of
   Advance -> ("Advanced a cycle", table, index + 1)
-  CP i s -> ("Stored pattern d" ++ show i ++ " = " ++ s, update (fromIntegral i) index mCyc table, index)
-  Silence i -> ("Silenced pattern d" ++ show i, update (fromIntegral i) index silentCycles table, index)
-  PrintComp -> (show table, table, index)
+  CP i s -> ("Stored pattern d" ++ show i ++ " = " ++ s, 
+    update (fromIntegral i) index mCyc table, index)
+  Silence i -> ("Silenced pattern d" ++ show i, 
+    update (fromIntegral i) index silentCycles table, index)
   _ -> error "TODO: handleResult"
 
 prompt :: IO (Option, Maybe [Cycle])
@@ -155,17 +166,34 @@ reprompt msg = do
 
 printDebug :: String -> IO ()
 printDebug s = do
-  handle <- openFile "debug/debug.txt" WriteMode
-  hPutStr handle s
-  hClose handle
+  putStrLn s
+-- printDebug s = do
+--   handle <- openFile "debug/debug.txt" WriteMode
+--   hPutStr handle s
+--   hClose handle
+
+data LilyPondFileAST =
+  File [LilyPondFileAST]
+  | Score Music
+  | Version String
+  deriving (Eq, Show)
+
+instance Pretty LilyPondFileAST where
+  pretty (File lilypondASTs) = fsep $ map pretty lilypondASTs
+  pretty (Version version) = string $ "\\version \"" ++ version ++ "\""
+  pretty (Score music) = string "\\score {" 
+    <> pretty music 
+    <> string "\n \\layout {} \n \\midi {} \n }"
 
 writeAndScore :: String -> Music -> IO ()
 writeAndScore fileName convertedLilypondAST = do
   -- Writes the lilypond file
+  writeFile fileName ""
   handle <- openFile fileName WriteMode
-  hPutStr handle "\\version \"2.24.3\" \n { \n"
-  hPrint handle convertedLilypondAST
-  hPutStr handle "}"
+  let lilypondFileAST = File [Version "2.24.3", Score convertedLilypondAST]
+  hPutStr handle $ show $ pretty lilypondFileAST
   hClose handle
   -- Converts to actual score as pdf
-  callCommand "lilypond -fpdf outputs/output.ly"
+  callCommand 
+   ("lilypond -dmidi-extension=mid --output=outputs/ " ++ fileName)
+
