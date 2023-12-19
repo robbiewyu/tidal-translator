@@ -1,4 +1,4 @@
-# project-cis5520
+# Tidal Translator
 
 Robert Yu
 * Github: robbiewyu
