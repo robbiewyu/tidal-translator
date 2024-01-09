@@ -1,5 +1,7 @@
 # Tidal Translator
 
+Here's a fun [demo video](https://youtu.be/jq6qej9phO8)
+
 Robert Yu
 * Github: robbiewyu
 * Penn ID: ryu02
